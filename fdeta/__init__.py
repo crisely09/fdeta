@@ -4,7 +4,8 @@ Tools for FDET with MD averaged rhoB densities.
 """
 
 # Add imports here
-from .fdeta import *
+# from .fdeta import *
+# from fdetmd.grid_tools import *
 
 # Handle versioneer
 from ._version import get_versions
