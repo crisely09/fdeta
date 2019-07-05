@@ -12,17 +12,15 @@ namespace py = pybind11;
  * \param grid0 Grid where first density and output is evaluated.
  * \param grid1 Integration grid where second density is evaluated.
  * \param weigths1 Integration weights for grid1.
- * \param density0 Density evaluated at grid0.
  * \param density1 Density evaluated at grid1.
  */
 py::array_t<double> coulomb_potential(py::array_t<double, py::array::c_style> grid0,
                        py::array_t<double, py::array::c_style> grid1,
                        py::array_t<double, py::array::c_style> weights1,
-                       py::array_t<double, py::array::c_style> density0,
                        py::array_t<double, py::array::c_style> density1){
     // Get the information from the python arrays
     py::buffer_info buf0 = grid0.request(), buf1 = grid1.request();
-    py::buffer_info bufdens0 = density0.request(), bufdens1 = density1.request(); 
+    py::buffer_info bufdens1 = density1.request();
     py::buffer_info bufw = weights1.request();
     // Make output array
     auto output = py::array_t<double>(buf0.shape[0]);
@@ -31,7 +29,6 @@ py::array_t<double> coulomb_potential(py::array_t<double, py::array::c_style> gr
     // now make cpp arrays
     double *cgrid0 = (double *) buf0.ptr,
            *cgrid1 = (double *) buf1.ptr,
-           *cdens0 = (double *) bufdens0.ptr,
            *cdens1 = (double *) bufdens1.ptr,
            *cweights1 = (double *) bufw.ptr,
            *coutput = (double *) bufout.ptr;
@@ -45,9 +42,9 @@ py::array_t<double> coulomb_potential(py::array_t<double, py::array::c_style> gr
             d[1] = pow(cgrid0[i*3+1] - cgrid1[j*3+1], 2);
             d[2] = pow(cgrid0[i*3+2] - cgrid1[j*3+2], 2);
             double distance = sqrt(d[0] + d[1] + d[2]);
-            if (distance > 1e-6){ // avoid very short distances
-                coutput[i] += cweights1[j]*cdens0[i]*cdens1[j]/distance;
-            } else {coutput[i] = 0.0; };
+            if (distance > 1e-5){ // avoid very short distances
+                coutput[i] += cweights1[j]*cdens1[j]/distance;
+            }
         }
     }
     return output;
