@@ -37,7 +37,7 @@ py::array_t<double> coulomb_potential(py::array_t<double, py::array::c_style> gr
         // Loop over grid1 and integrate
         for(int j=0; j<buf1.shape[0]; j++){
             std::array<double, 3> d;
-            // Check something 
+            // Check something
             d[0] = pow(cgrid0[i*3] - cgrid1[j*3], 2);
             d[1] = pow(cgrid0[i*3+1] - cgrid1[j*3+1], 2);
             d[2] = pow(cgrid0[i*3+2] - cgrid1[j*3+2], 2);
