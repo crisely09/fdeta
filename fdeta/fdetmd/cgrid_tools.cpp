@@ -15,10 +15,10 @@ class BoxGrid {
         // Virtual destructor
         ~BoxGrid() {};
 
-        BoxGrid(py::array_t<int, py::array::c_style> box_size,
+        BoxGrid(py::array_t<int, py::array::c_style> grid_size,
                 py::array_t<double, py::array::c_style> edges);
         virtual void save_grid(py::array_t<double, py::array::c_style> grid,
-                               std::string fname);
+                               const char *fname);
         
 };
 
@@ -28,10 +28,10 @@ class BoxGrid {
  *  \param box_size  The size of cubic box in xyz (Angstrom)
  *  \param edges     Points to be used in each direction
  */
-BoxGrid::BoxGrid(py::array_t<int, py::array::c_style> box_size,
+BoxGrid::BoxGrid(py::array_t<int, py::array::c_style> grid_size,
                  py::array_t<double, py::array::c_style> edges){
     edbuff = edges.request();
-    boxbuff = box_size.request();
+    boxbuff = grid_size.request();
     cedges = (double *) edbuff.ptr;
     int *sizes = (int *) boxbuff.ptr;
     nx = sizes[0];
@@ -46,12 +46,15 @@ BoxGrid::BoxGrid(py::array_t<int, py::array::c_style> box_size,
  * \param grid Numpy array to store the grid.
  */
 void BoxGrid::save_grid(py::array_t<double, py::array::c_style> grid,
-                        std::string fname){
+                        const char *fname){
     // Get the information from the python objects
     py::buffer_info buf = grid.request();
 
     // now make cpp arrays
     double *cgrid = (double *) buf.ptr;
+    // Create and open a file to print the grid
+    FILE * file;
+    file = fopen(fname, "w");
 
     int count = 0;
     for(int k=0; k<nz; k++){
@@ -60,9 +63,13 @@ void BoxGrid::save_grid(py::array_t<double, py::array::c_style> grid,
                 cgrid[count] = cedges[i];
                 cgrid[count+1] = cedges[nx+j];
                 cgrid[count+2] = cedges[nx+ny+k];
+                fprintf(file, "%12.10f \t %12.10f \t %12.10f \n",
+                        cgrid[count], cgrid[count+1], cgrid[count+2]);
             }
         }
     }
+    // Close grid file
+    fclose(file);
 }
 
 // In case I want to override/use inheritance in Python.

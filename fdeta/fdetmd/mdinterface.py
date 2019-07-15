@@ -17,7 +17,7 @@ class MDInterface(object):
     ta_object : TrajectoryAnalysis object
 
     """
-    def __init__(self, ta_object, box_size, mol_id=0):
+    def __init__(self, ta_object, box_size, grid_size, mol_id=0):
         """ Create a pcf ta_object.
 
         Parameters
@@ -26,17 +26,16 @@ class MDInterface(object):
             Object with all information about the MD trajectory
         box_size : tuple(3)
             Size of cubic grid where to evaluate the PCF
-        grid : np.ndarray((Npoints,3), dtype=float)
-            Coordinates of cubic grid. This should be the same
-            for all the atoms.
-        values : list(np.ndarray(Npoints))
-            List of histogram information for each atom, in 1D.
+        grid_size : np.ndarray((Npoints,3), dtype=float)
+            Number of points in each direction.
         mol_id : int
             Index indicating which molecule(s) to take as solute.
             By default solute = 0.
 
         """
         self.ta_object = ta_object
+        self.box_size = box_size
+        self.grid_size = grid_size
         if mol_id == 0:
             self.solute = 0
             self.solvent = 1
@@ -48,21 +47,20 @@ class MDInterface(object):
         self.ta_object.select(mol_id)
         self.ta_object.align_along_trajectory(mol_id, self.ta_object.Topology)
         edges, self.pcf = self.ta_object.compute_pair_correlation_function(histogram_range,
-                                                                           box_size, mol_id)
-        delta = sp.diff(edges)
+                                                                           grid_size, mol_id)
+        self.delta = sp.diff(edges)
         edges = np.array(edges)
         # TODO: make sure next line works for any size of histogram
-        self.edges = edges[:, :-1] + delta/2.0
+        self.edges = edges[:, :-1] + self.delta/2.0
         self.total_frames = self.ta_object.Total_number_of_frames
-        self.dvolume = delta[0][0] * delta[1][0] * delta[2][0]
+        self.dvolume = self.delta[0][0] * self.delta[1][0] * self.delta[2][0]
         self.ta_object.select(self.solvent)
         self.solvent_atomtypes = self.ta_object.Topology[self.solvent][1]
         self.solvent_natoms = len(self.solvent_atomtypes)
         # Initialize Pybind Class
-        self.pbox = BoxGrid(box_size, edges)
+        self.pbox = BoxGrid(grid_size, self.edges)
 
-    @staticmethod
-    def save_grid(box_size, step_size, pbox, fname='box_grid.txt'):
+    def save_grid(self, fname='box_grid.txt'):
         """ Get xyz grid into text file.
 
         Parameters
@@ -75,11 +73,11 @@ class MDInterface(object):
             Step size in Angstrom
 
         """
-        steps = box_size/step_size
-        npoints = np.cumprod(steps)[-1]
+        steps = self.grid_size/self.delta[:, 0]
+        npoints = int(np.cumprod(steps)[-1])
         grid = np.zeros((npoints, 3))
         # Call the cpp pybind11 implementation
-        pbox.save_grid(grid, fname)
+        self.pbox.save_grid(grid, fname)
 
     def pcf_from_file(self, filename, element):
         """ Read the pcf from file."""
