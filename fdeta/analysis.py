@@ -4,17 +4,15 @@
 """
 Trajectory Analysis Class.
 
-
 """
 
-import kabsch as kb
 import numpy as np
-from base_trajectory import Trajectory
+import fdeta.kabsch as kb
+from fdeta.base_trajectory import Trajectory
 
 
 class TrajectoryAnalysis(Trajectory):
-    """
-    """
+    """Analysis of Trajectories."""
 
     def compute_center_of_mass(self, mass, coordinates):
         return np.sum(np.multiply(coordinates, mass.reshape(len(mass), 1)), axis=0)/mass.sum()
@@ -131,7 +129,9 @@ class TrajectoryAnalysis(Trajectory):
 
         # Rotate P
         self.structure_aligned = np.dot(self.structure,  U)
-        return np.asarray([self.structure_aligned, U, self.rmsd(self.structure_aligned, self.reference_structure), self.structure_centroid, self.reference_structure_centroid])
+        return np.asarray([self.structure_aligned, U,
+                           self.rmsd(self.structure_aligned, self.reference_structure),
+                           self.structure_centroid, self.reference_structure_centroid])
 
     def align_geometries_from_files(self, structure, reference_structure):
         self.structure_atoms, self.structure = kb.get_coordinates(structure)
@@ -185,79 +185,53 @@ class TrajectoryAnalysis(Trajectory):
             self.structure_averaged = np.mean(np.asarray(self.alignement.values())[:, 0], axis=0)
         self.save(molecular_id, self.structure_averaged)
 
-    def compute_pair_correlation_function(self, include_solute_pcf, only_solute, *molecular_id):
+    def compute_pair_correlation_function(self, pcf_range, bins, *molecular_id):
         """ Given the 'alignement' variable the method computes the pair correlation function (pcf)
         for the entire system in 3 steps:
         a) translation to the solute centroid
         b) rotation
         c) splitting space by bins and measuring the number of a certain type atoms in each
+        Should the pcf be computed only for solute molecule
 
         Parameters
         ---------
-        include_solute_pcf : bool
-            Should the solute molecule be included into the pcf computation
-        only_solute : bool
-            Should the pcf be computed only for solute molecule
+        pcf_range : tuple(float)
+            Range of pcf box
+        bins : sequence or int
+            Bin specification for the numpy.histogramdd function. Any of the following:
+            1) A sequence of arrays describing the monotonically increasing bin edges
+            along each dimension.
+            2) The number of bins for each dimension (nx, ny, … =bins)
+            3) The number of bins for all dimensions (nx=ny=…=bins).
         molecular_id : int
             The unique number determining the molecule.
 
         """
-
-        self.No_solute_pcf = not include_solute_pcf
-        self.Only_solute = only_solute
-        self.pcf = {}
-        # Translation to the geometrical center of rotation and rotatiion
-        self.Frames_aligned = np.asarray([np.dot(self.Frames[iframe][:, :3] - self.alignement[iframe][3],
-                                         self.alignement[iframe][1]) for iframe in range(self.Total_number_of_frames)])
-        # Getting indicies for solute (molecules to be excluded)
-        self.Solute_index = np.where(self.Frames[0, :, 3] == molecular_id)[0]
-        # Getting indicies for each type of element
-        for ielement in set(self.Elements):
-            self.Index_of_elements[ielement] = np.where(self.Elements == ielement)[0]
-            # Excluding atoms of solute from the list of atoms
-            if self.No_solute_pcf:
-                # Excluding the solute molecule from pcf
-                mask = np.in1d(self.Index_of_elements[ielement], self.Solute_index, invert=True)
-                self.Index_of_elements[ielement] = self.Index_of_elements[ielement][mask]
-            elif self.Only_solute:
-                # PCF computed only for solute molecule
-                mask = np.in1d(self.Index_of_elements[ielement], self.Solute_index, invert=False)
-                self.Index_of_elements[ielement] = self.Index_of_elements[ielement][mask]
-        # Collecting all coordinates through all frames for a given element ielement
-            coordinates = self.Frames_aligned[:, self.Index_of_elements[ielement]].reshape(self.Total_number_of_frames*self.Index_of_elements[ielement].size, 3)
-            self.pcf[ielement] = np.histogramdd(coordinates, bins=50)
-
-    def compute_pair_correlation_functionADF(self, pcf_range, bins, *molecular_id):
-        """ Given the 'alignement' variable the method computes the pair correlation function (pcf)
-        for the entire system in 3 steps:
-        a) translation to the solute centroid
-        b) rotation
-        c) splitting space by bins and measuring the number of a certain type atoms in each
-
-        Parameters
-        ---------
-        include_solute_pcf : bool
-            Should the solute molecule be included into the pcf computation
-        only_solute : bool
-            Should the pcf be computed only for solute molecule
-        molecular_id : int
-            The unique number determining the molecule.
-
-        """
-
         np.set_printoptions(precision=6,  threshold=np.inf)
-        self.pcfADF = {}
-        # Translation to the geometrical center of rotation and rotatiion
-        self.Frames_aligned = np.asarray([np.dot(self.Frames[iframe][:, :3]-self.alignement[iframe][3], self.alignement[iframe][1]) for iframe in range(self.Total_number_of_frames)])
+        self.pcf = {}
+        # Translation to the geometrical center of rotation and rotation
+        tmpframes = []
+        for iframe in range(self.Total_number_of_frames):
+            tmpframes.append(np.dot(self.Frames[iframe][:, :3]-self.alignement[iframe][3],
+                                    self.alignement[iframe][1]))
+        self.Frames_aligned = np.asarray(tmpframes)
+        del tmpframes
         # Getting indicies for solute (molecules to be excluded)
         self.Solute_index = np.where(self.Frames[0, :, 3] == molecular_id)[0]
         # Getting indicies for each type of element
+        self.edges = None
         for ielement in set(self.Elements):
             self.Index_of_elements[ielement] = np.where(self.Elements == ielement)[0]
             # Excluding atoms of solute from the list of atoms
             mask = np.in1d(self.Index_of_elements[ielement], self.Solute_index, invert=True)
             self.Index_of_elements[ielement] = self.Index_of_elements[ielement][mask]
             # Collecting all coordinates through all frames for a given element ielement
-            coordinates = self.Frames_aligned[:, self.Index_of_elements[ielement]].reshape(self.Total_number_of_frames*self.Index_of_elements[ielement].size, 3)
-            self.pcfADF[ielement] = np.histogramdd(coordinates, range=pcf_range, bins=bins)
-        return self.pcfADF
+            fsize = self.Total_number_of_frames*self.Index_of_elements[ielement].size
+            coordinates = self.Frames_aligned[:, self.Index_of_elements[ielement]].reshape(fsize, 3)
+            histogram, hedges = np.histogramdd(coordinates, range=pcf_range, bins=bins)
+            # Only saves once the edges because they are the same for all cases.
+            # TODO: confirm this statement.
+            if not self.edges:
+                self.edges = hedges
+            self.pcf[ielement] = histogram
+        return self.edges, self.pcf

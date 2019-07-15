@@ -1,8 +1,11 @@
 # -*- coding: utf-8 -*-
-"""
-Created on Fri Jan 30 16:07:43 2015
+#  Based on ExportImport class
+#  created on Fri Jan 30 16:07:43 2015
+#  @author: alaktionov
+#  Modify by C.G.E. 2019
+#-
+"""Interface between trajectory and FDET code.
 
-@author: alaktionov
 """
 
 import numpy as np
@@ -11,7 +14,8 @@ from scipy import interpolate
 import Vis
 import copy
 
-class Export:
+
+class Interface:
     """
     Class for communication with another programs.
     Preparation of a PCF to be exported to ADF

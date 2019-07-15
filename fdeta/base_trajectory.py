@@ -66,7 +66,6 @@ class Trajectory:
             Trajectory File Format: 'Element  X Y Z Molecule_ID'
 
         """
-
         try:
             with open(name, "r") as f:
                 self.data = f.readlines()
@@ -110,7 +109,7 @@ class Trajectory:
         """
 
         self.index = np.where(self.Frames[:, :, 3] == topo)  # All indices of subsystem
-        self.Number_of_selected_atoms = len(self.index[1])/self.Total_number_of_frames
+        self.Number_of_selected_atoms = len(self.index[1])//self.Total_number_of_frames
         self.Subsystem = np.reshape(self.Frames[self.index],
                                     (self.Total_number_of_frames,
                                      self.Number_of_selected_atoms, 4))
@@ -163,7 +162,7 @@ class Trajectory:
             number_of_atoms = len(data[0][0])
             elements = self.Topology[m_id][1]
             with open('aligned'+str(m_id), 'w') as f:
-                for iframe, coordinates in data.iteritems():
+                for iframe, coordinates in data.items():
                     f.write(str(number_of_atoms)+'\n')
                     f.write('Frame '+str(iframe)+'\n')
                     for name, iline in zip(elements, coordinates[0]):
