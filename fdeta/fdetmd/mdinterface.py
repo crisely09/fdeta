@@ -83,9 +83,40 @@ class MDInterface:
         -------
         rhob : np.ndarray((npoints, 4), dtype=float)
             Density of solvent on npoints, everything in a.u.
-        """
-        rhob = np.zeros((self.npoints, 4))
 
+        """
+        rhocube = None
+        for ielement in list(charge_coeffs.keys()):
+            if rhocube is None:
+                rhocube = (-charge_coeffs[ielement]*self.ta_object.nametomass(ielement)
+                           *self.pcf[ielement])
+            else:
+                rhocube -= (charge_coeffs[ielement]*self.ta_object.nametomass(ielement)
+                            *self.pcf[ielement])
+        dvolume = self.delta[0][0] * self.delta[1][0] * self.delta[2][0]
+        rhob = self.pbox.normalize(self.npoints*4, self.total_frames, dvolume, rhocube)
+        rhob = np.reshape(rhob, (self.npoints, 4))
+        return rhob
+
+    def get_nuclear_charges(self):
+        """ Evaluate the nuclear charges of the solvent (other fragment from mol_id).
+
+        Returns
+        -------
+        nuc_charges : np.ndarray((npoints, 4), dtype=float)
+            Density of solvent on npoints, everything in a.u.
+
+        """
+        nuclei = None
+        for ielement in list(charge_coeffs.keys()):
+            if nuclei is None:
+                nuclei = self.ta_object.nametomass(ielement)*self.pcf[ielement]
+            else:
+                nuclei += self.ta_object.nametomass(ielement)*self.pcf[ielement]
+        dvolume = self.delta[0][0] * self.delta[1][0] * self.delta[2][0]
+        nuc_charges = self.pbox.normalize(self.npoints*4, self.total_frames, dvolume, nuclei)
+        nuc_charges = np.reshape(nuc_charges, (self.npoints, 4))
+        return nuc_charges
 
     def save_rhob_ongrid(self, extgrid=None):
         """ Evaluate rhoB on an specific grid.
@@ -100,9 +131,10 @@ class MDInterface:
             extgrid = np.loadtxt('extgrid.txt')
         grid = np.zeros((self.npoints, 3))
         grid = self.pbox.get_grid(grid)
-        #raise NotImplementedError
+        raise NotImplementedError
 
-    def interpolate_function(self, function, extgrid):
+    @staticmethod
+    def interpolate_function(function, extgrid):
         """ Interpolate some function to an external grid.
 
         This method assumes that the reference values are

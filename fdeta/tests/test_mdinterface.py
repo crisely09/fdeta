@@ -29,7 +29,6 @@ def test_mdinterface_base():
     guvhere = np.loadtxt(os.path.join(dic, 'tests/box_grid.txt'))
     np.allclose(mdi.points, ref_edges)
     np.allclose(guvref[:,:-1], guvhere)
-    mdi.save_rhob_ongrid()
 
 def test_mdinterface_histogram():
     """Test to initialize `MDInterface`."""
@@ -43,3 +42,6 @@ def test_mdinterface_histogram():
     mdi.save_grid('second_text.txt')
     assert (mdi.delta == 1.0).all()
     assert np.sum(mdi.pcf['O']) == 4.0
+    ccoeffs = {'O': 1.1, 'H': 0.6}
+    mdi.get_rhob(ccoeffs)
+test_mdinterface_histogram()
