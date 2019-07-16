@@ -153,7 +153,7 @@ class Trajectory:
             m_id, coordinates = structure[0], structure[1]
             number_of_atoms = self.Topology[m_id][2]
             elements = self.Topology[m_id][1].reshape((1, number_of_atoms))
-            np.savetxt('average'+str(m_id), np.concatenate((elements.T, coordinates.astype('string')), axis=1),
+            np.savetxt('average'+str(m_id), np.concatenate((elements.T, coordinates), axis=1),
                        header='Averaged structure '+str(m_id), comments=str(number_of_atoms)+'\n', fmt="%s")
 
         if (len(structure) == 3) and structure[2] == 'ALIGNED':

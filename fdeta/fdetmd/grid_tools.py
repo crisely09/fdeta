@@ -37,10 +37,10 @@ def simplify_cubic_grid(cubic_grid, var_values, tot_frames):
         raise TypeError('var_values must be numpy array')
     if not isinstance(tot_frames, int):
         raise TypeError('tot_frames must be int')
-    Nx, Ny, Nz = var_values.shape[0], var_values.shape[1], var_values.shape[2]
-    if not Nx == Ny and not Nx == Nz:
+    n_x, n_y, n_z = var_values.shape[0], var_values.shape[1], var_values.shape[2]
+    if not n_x == n_y and not n_x == n_z:
         raise NotImplementedError("Only arrays with cubic forms accepted.")
-    if cubic_grid.shape[1] < Nx:
+    if cubic_grid.shape[1] < n_x:
         raise ValueError('cubic_grid has wrong shape.')
 
     # This expression does not work when Nx!=Ny or Nx!=Nz....
@@ -51,11 +51,11 @@ def simplify_cubic_grid(cubic_grid, var_values, tot_frames):
     # Divide on an elementary volume (of microcell)
     var_values /= delta[0][0] * delta[1][0] * delta[2][0]
 
-    output = np.zeros((Nx*Ny*Nz, 4), dtype=float)
-    for k in range(Nz):
-        for j in range(Ny):
-            for i in range(Nx):
-                cnt = i + j*Ny + k*Ny*Nz
+    output = np.zeros((n_x*n_y*n_z, 4), dtype=float)
+    for k in range(n_z):
+        for j in range(n_y):
+            for i in range(n_x):
+                cnt = i + j*n_y + k*n_y*n_z
                 # Loop over x
                 output[cnt, 0] = cubic_grid[0][i]
                 # Loop over y

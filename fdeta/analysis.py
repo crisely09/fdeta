@@ -182,7 +182,7 @@ class TrajectoryAnalysis(Trajectory):
         """
 
         for iframe in range(self.Total_number_of_frames):
-            self.structure_averaged = np.mean(np.asarray(self.alignement.values())[:, 0], axis=0)
+            self.structure_averaged = np.mean(np.array(list(self.alignement.values()))[:, 0], axis=0)
         self.save(molecular_id, self.structure_averaged)
 
     def compute_pair_correlation_function(self, pcf_range, bins, *molecular_id):

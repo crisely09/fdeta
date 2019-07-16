@@ -9,7 +9,7 @@ import scipy as sp
 from fdeta.fdetmd.cgrid_tools import BoxGrid
 
 
-class MDInterface(object):
+class MDInterface:
     """Interface between MD trajectories and FDET elements.
 
     Attributes
@@ -34,31 +34,20 @@ class MDInterface(object):
 
         """
         self.ta_object = ta_object
-        self.box_size = box_size
-        self.grid_size = grid_size
-        if mol_id == 0:
-            self.solute = 0
-            self.solvent = 1
-        else:
-            self.solute = 1
-            self.solvent = 0
-        # TODO: verify the range is consistent with any step size.
         histogram_range = np.asarray([-box_size/2., box_size/2.]).T
         self.ta_object.select(mol_id)
         self.ta_object.align_along_trajectory(mol_id, self.ta_object.Topology)
+        self.ta_object.get_average_structure(mol_id)
         edges, self.pcf = self.ta_object.compute_pair_correlation_function(histogram_range,
                                                                            grid_size, mol_id)
+        self.npoints = np.cumprod(grid_size)[-1]
         self.delta = sp.diff(edges)
         edges = np.array(edges)
-        # TODO: make sure next line works for any size of histogram
-        self.edges = edges[:, :-1] + self.delta/2.0
+        # NOTE: only works for cubic grids
+        self.points = edges[:, :-1] + self.delta/2.0
         self.total_frames = self.ta_object.Total_number_of_frames
-        self.dvolume = self.delta[0][0] * self.delta[1][0] * self.delta[2][0]
-        self.ta_object.select(self.solvent)
-        self.solvent_atomtypes = self.ta_object.Topology[self.solvent][1]
-        self.solvent_natoms = len(self.solvent_atomtypes)
         # Initialize Pybind Class
-        self.pbox = BoxGrid(grid_size, self.edges)
+        self.pbox = BoxGrid(grid_size, self.points)
 
     def save_grid(self, fname='box_grid.txt'):
         """ Get xyz grid into text file.
@@ -67,17 +56,12 @@ class MDInterface(object):
         ----------
         box_size : tuple(3), int
             Size of grid box.
-        edges : list(np.ndarray(3, dtype=float))
-            Bin edges of each dimension.
         step_size : float
             Step size in Angstrom
 
         """
-        steps = self.grid_size/self.delta[:, 0]
-        npoints = int(np.cumprod(steps)[-1])
-        grid = np.zeros((npoints, 3))
         # Call the cpp pybind11 implementation
-        self.pbox.save_grid(grid, fname)
+        self.pbox.save_grid(self.npoints*3, fname)
 
     def pcf_from_file(self, filename, element):
         """ Read the pcf from file."""
@@ -87,9 +71,36 @@ class MDInterface(object):
         """ Save the pcf to file."""
         raise NotImplementedError
 
-    def save_rhob_ongrid(self, grid):
-        """ Evaluate rhoB on an specific grid."""
-        raise NotImplementedError
+    def get_rhob(self, charge_coeffs):
+        """ Evaluate the density of the solvent (other fragment from mol_id).
+
+        Parameters
+        ----------
+        charge_coeffs : dict('element' : coeff)
+            The ratio between effective charge and nuclear charge: q_B/Z_B.
+
+        Returns
+        -------
+        rhob : np.ndarray((npoints, 4), dtype=float)
+            Density of solvent on npoints, everything in a.u.
+        """
+        rhob = np.zeros((self.npoints, 4))
+
+
+    def save_rhob_ongrid(self, extgrid=None):
+        """ Evaluate rhoB on an specific grid.
+
+        Parameters
+        ----------
+        extgrid : np.ndarray((n,3), dtype=float)
+            New set of points for the interpolation.
+
+        """
+        if not extgrid:
+            extgrid = np.loadtxt('extgrid.txt')
+        grid = np.zeros((self.npoints, 3))
+        grid = self.pbox.get_grid(grid)
+        #raise NotImplementedError
 
     def interpolate_function(self, function, extgrid):
         """ Interpolate some function to an external grid.
