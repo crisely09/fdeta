@@ -207,7 +207,10 @@ void BoxGrid::electrostatic_potential(int npoints, int nframes, const char *ofna
             r1[1] = cgrid[i+count+1]/BOHR;
             r1[2] = cgrid[i+count+2]/BOHR;
             d = distance(r0, r1);
-            cresult[j+vcount+3] += cvals[i]/nframes/d;
+            // avoid very short distances
+            if (d > 1e-6){
+                cresult[j+vcount+3] += cvals[i]/nframes/d;
+            }
             count += 3;
         }
         fprintf(file, "%12.10f \t %12.10f \t %12.10f \t %12.10f \n",

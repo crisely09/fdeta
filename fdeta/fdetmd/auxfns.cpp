@@ -50,8 +50,39 @@ py::array_t<double> coulomb_potential(py::array_t<double, py::array::c_style> gr
     return output;
 }
 
-PYBIND11_MODULE(vcoulomb, m){
+
+/*
+ *   \brief Integrate something on grid.
+ *
+ *   \param  weights
+ *   \params values
+ */
+double integrate(py::array_t<double, py::array::c_style> weights,
+                 py::array_t<double, py::array::c_style> values){
+
+    // Get the information from the python arrays
+    py::buffer_info buf0 = weights.request(), buf1 = values.request();
+
+    // Both arrays should be of the same size
+    if (buf0.size != buf1.size){
+        throw std::runtime_error("Size of arrays must be the same");
+    }
+
+    double *cweights = (double *) buf0.ptr,
+           *cvalues = (double *) buf1.ptr;
+
+    double result = 0.0;
+    for (ssize_t i=0; i<buf0.size; i++){
+        result += cweights[i]*cvalues[i];
+    }
+    return result;
+};
+
+
+PYBIND11_MODULE(auxfns, m){
     m.doc() = "Evaluate the coulomb potential from two densities.";
     m.def("coulomb_potential", &coulomb_potential,
           "The coulomb repulsion between two electronic densities.");
+    m.def("integrate", &integrate,
+          "Numerical integration. Sum over values and multiply by weights.");
 }

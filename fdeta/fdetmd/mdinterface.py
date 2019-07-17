@@ -91,10 +91,10 @@ class MDInterface:
         rhocube = None
         for ielement in list(charge_coeffs.keys()):
             if rhocube is None:
-                rhocube = (-charge_coeffs[ielement]*self.ta_object.nametomass(ielement)
+                rhocube = (-charge_coeffs[ielement]*self.ta_object.nametocharge(ielement)
                            * self.pcf[ielement])
             else:
-                rhocube -= (charge_coeffs[ielement]*self.ta_object.nametomass(ielement)
+                rhocube -= (charge_coeffs[ielement]*self.ta_object.nametocharge(ielement)
                             * self.pcf[ielement])
         if ingrid:
             rhob = self.pbox.normalize(self.npoints*4, self.total_frames, rhocube)
@@ -123,9 +123,9 @@ class MDInterface:
         nuclei = None
         for ielement in list(self.pcf.keys()):
             if nuclei is None:
-                nuclei = self.ta_object.nametomass(ielement)*self.pcf[ielement]
+                nuclei = self.ta_object.nametocharge(ielement)*self.pcf[ielement]
             else:
-                nuclei += self.ta_object.nametomass(ielement)*self.pcf[ielement]
+                nuclei += self.ta_object.nametocharge(ielement)*self.pcf[ielement]
         if ingrid:
             nuc_charges = self.pbox.normalize(self.npoints*4, self.total_frames, nuclei)
             nuc_charges = np.reshape(nuc_charges, (self.npoints, 4))
@@ -133,7 +133,7 @@ class MDInterface:
         else:
             return nuclei
 
-    def save_rhob_ongrid(self, extgrid='extragrid.txt'):
+    def rhob_on_grid(self, charge_coeffs, gridname='extragrid.txt'):
         """ Evaluate rhoB on an specific grid.
 
         Parameters
@@ -142,12 +142,18 @@ class MDInterface:
             New set of points for the interpolation.
 
         """
-        # if not extgrid:
-        #    extgrid = np.loadtxt('extgrid.txt')
-        raise NotImplementedError
+        rhob = self.get_elec_density(charge_coeffs, ingrid=True)
+        bohr = 0.529177249
+        # Normalize charge with respect to volume element
+        rhob[:, 3] *= -1.0
+        dv = self.delta[0][0] * self.delta[1][0] * self.delta[2][0] / bohr**3
+        rhob[:, 3] /= dv
+        np.savetxt('refrhob.txt', rhob)
+        extgrid = self.interpolate_function(rhob[:, :3], rhob[:, 3], gridname)
+        np.savetxt('rhob.txt', extgrid)
 
     @staticmethod
-    def interpolate_function(function, gridname='extragrid.txt'):
+    def interpolate_function(refgrid, values, gridname='extragrid.txt', method='linear'):
         """ Interpolate some function to an external grid.
 
         This method assumes that the reference values are
@@ -155,13 +161,32 @@ class MDInterface:
 
         Parameters
         ----------
+        refgrid : np.ndarray((n,3), dtype=float)
+            Set of points where function was evaluated.
         function : np.ndarray(N, dtype=float)
-            Reference values to create interpolator.
-        extgrid : np.ndarray((n,3), dtype=float)
-            New set of points for the interpolation.
+            Reference function values to create interpolator.
+        gridname : string
+            File with new set of points for the interpolation.
+        method : string
+            Name of method for the interpolation. Options are:
+            `linear`, `cubic`.
 
         """
-        raise NotImplementedError
+        from scipy import interpolate
+        xi = refgrid[:, 0]
+        yi = refgrid[:, 1]
+        zi = refgrid[:, 2]
+        interpolator = interpolate.Rbf(xi, yi, zi, values[:, 3], function=method)
+        # interpolator = interpolate.LinearNDInterpolator(rhob[: ,:3], rhob[:, 3])
+        # Load grid and clean weights
+        extgrid = np.loadtxt(gridname)
+        extgrid[:, 3] = 0.0
+        xj = extgrid[:, 0]
+        yj = extgrid[:, 1]
+        zj = extgrid[:, 2]
+        extgrid[:, 3] = interpolator(xj, yj, zj)
+        # extgrid[:, 3] = interpolator(extgrid[:, :3])
+        return extgrid
 
     def compute_electrostatic_potential(self, charge_coeffs, gridname='extragrid.txt'):
         """ Evaluate and save electrostatic potential.
