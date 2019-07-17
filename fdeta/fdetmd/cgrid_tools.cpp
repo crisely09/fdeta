@@ -12,6 +12,7 @@ class BoxGrid {
         int nx, ny, nz;
         double *cedges;
         const double BOHR = 0.529177249;
+        virtual double distance(double* r0, double* r1);
         virtual void make_grid(double *cgrid);
     public:
         // Virtual destructor
@@ -19,8 +20,11 @@ class BoxGrid {
 
         BoxGrid(py::array_t<int, py::array::c_style> grid_size,
                 py::array_t<double, py::array::c_style> edges);
+        virtual void electrostatic_potential(int npoints, int nframes, const char *ofname,
+                                             py::array_t<double, py::array::c_style> chargedens,
+                                             py::array_t<double, py::array::c_style> extgrid);
         virtual py::array_t<double> get_grid(py::array_t<double, py::array::c_style> grid);
-        virtual py::array_t<double> normalize(int length, int nframes, double dvolume,
+        virtual py::array_t<double> normalize(int length, int nframes,
                                               py::array_t<double, py::array::c_style> values);
         virtual void save_grid(int grid_length, const char *fname);
 
@@ -43,6 +47,24 @@ BoxGrid::BoxGrid(py::array_t<int, py::array::c_style> grid_size,
     nz = sizes[2];
 };
 
+/*
+ *  \brief Evaluate the distance between two points
+ *
+ *  \param r0,r1   Points in space (x, y, z)
+ */
+double BoxGrid::distance(double *r0, double *r1){
+    double result = 0;
+    for (int i=0; i<3; i++){
+        result += (r0[i] - r1[i]) * (r0[i] - r1[i]);
+    }
+    return sqrt(result);
+}
+
+/*
+ *  \brief Construct the array in xyz format from cubic form.
+ *
+ *  \param cgrid    The final array with grid points.
+ */
 void BoxGrid::make_grid(double *cgrid){
     // Fill out the grid array
     int count = 0;
@@ -85,7 +107,7 @@ void BoxGrid::save_grid(int grid_length, const char *fname){
     double *cgrid;
     cgrid = new double [grid_length];
     make_grid(cgrid);
-    // Now just print it
+    // Open file to print array
     FILE * file;
     file = fopen(fname, "w");
 
@@ -108,10 +130,10 @@ void BoxGrid::save_grid(int grid_length, const char *fname){
  * \brief Normalize values from histrogram in xyz (grid in bohr).
  *
  * \param length      Total length of grid.
- * \param dvolume     Unit of volume in Angstrom.
+ * \param nframes     Total number of frames from MD.
  * \param values      Values of Rhob from histogram, in Angstrom.
  */
-py::array_t<double> BoxGrid::normalize(int length, int nframes, double dvolume,
+py::array_t<double> BoxGrid::normalize(int length, int nframes,
                                       py::array_t<double, py::array::c_style> values){
     // Get the information from python objects
     py::buffer_info buf1 = values.request();
@@ -131,7 +153,7 @@ py::array_t<double> BoxGrid::normalize(int length, int nframes, double dvolume,
     ssize_t count = 0, vcount = 0;
     for(ssize_t k=0; k<rlen; k++){
         if ( (count+1) % 4 == 0){
-            cresult[count] = cvals[vcount]/nframes/dvolume*BOHR*BOHR*BOHR;
+            cresult[count] = cvals[vcount]/nframes;
             vcount++;
         } else{
             cresult[count] = cgrid[k-vcount]/BOHR;
@@ -142,6 +164,63 @@ py::array_t<double> BoxGrid::normalize(int length, int nframes, double dvolume,
     delete [] cgrid;
 
     return result;
+};
+
+/*
+ * \brief Evaluate electrostatic potential and save it on file.
+ *
+ * \param npoints           Total number of grid points.
+ * \param nframes           Total number of frames from MD.
+ * \param ofname            File name where the potential is saved.
+ * \param chargedens        Values of total charge density from histogram, in Angstrom.
+ * \param extgrid           External grid where the potential is evaluated, in Bohr.
+ */
+void BoxGrid::electrostatic_potential(int npoints, int nframes, const char *ofname,
+                                      py::array_t<double, py::array::c_style> chargedens,
+                                      py::array_t<double, py::array::c_style> extgrid){
+    // Get the information from python objects
+    py::buffer_info buf1 = chargedens.request(), buf2 = extgrid.request();
+    double *cvals = (double *) buf1.ptr,
+           *cresult = (double *) buf2.ptr;
+
+    // Make xyz grid
+    ssize_t gridlen = (ssize_t) npoints*3;
+    double *cgrid;
+    cgrid = new double [gridlen];
+    make_grid(cgrid);
+
+    // Open file to print array
+    FILE * file;
+    file = fopen(ofname, "w");
+
+    ssize_t vcount = 0;
+    for(ssize_t j=0; j<buf2.size/4; j++){
+        double *r0 = new double [3];
+        r0[0] = cresult[j+vcount];
+        r0[1] = cresult[j+vcount+1];
+        r0[2] = cresult[j+vcount+2];
+        ssize_t count = 0;
+        for(int i=0; i<npoints; i++){
+            double *r1 = new double [3];
+            double d;
+            r1[0] = cgrid[i+count]/BOHR;
+            r1[1] = cgrid[i+count+1]/BOHR;
+            r1[2] = cgrid[i+count+2]/BOHR;
+            d = distance(r0, r1);
+            cresult[j+vcount+3] += cvals[i]/nframes/d;
+            count += 3;
+        }
+        fprintf(file, "%12.10f \t %12.10f \t %12.10f \t %12.10f \n",
+                cresult[j+vcount], cresult[j+vcount+1], cresult[j+vcount+2], cresult[j+vcount+3]);
+        vcount += 3;
+    }
+
+    // Close grid file
+    fclose(file);
+
+    // Clean dynamically allocated arrays
+    delete [] cgrid;
+
 };
 
 // In case I want to override/use inheritance in Python.
@@ -161,6 +240,7 @@ PYBIND11_MODULE(cgrid_tools, m){
     //py::class_<BoxGrid, PyBoxGrid> boxgrid(m, "BoxGrid");
     py::class_<BoxGrid>(m, "BoxGrid")
           .def(py::init<py::array_t<int>, py::array_t<double>>())
+          .def("electrostatic_potential", &BoxGrid::electrostatic_potential)
           .def("get_grid", &BoxGrid::get_grid)
           .def("normalize", &BoxGrid::normalize)
           .def("save_grid", &BoxGrid::save_grid);

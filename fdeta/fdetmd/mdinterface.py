@@ -71,8 +71,8 @@ class MDInterface:
         """ Save the pcf to file."""
         raise NotImplementedError
 
-    def get_rhob(self, charge_coeffs):
-        """ Evaluate the density of the solvent (other fragment from mol_id).
+    def get_elec_density(self, charge_coeffs, ingrid=False):
+        """ Evaluate the electronic density of the solvent.
 
         Parameters
         ----------
@@ -83,42 +83,57 @@ class MDInterface:
         -------
         rhob : np.ndarray((npoints, 4), dtype=float)
             Density of solvent on npoints, everything in a.u.
+            ingrid must be set True
+        rhocube : np.ndarray(npoints, dtype=float)
+            Density of electrons of solvent in cubic grid, in Angstrom.
 
         """
         rhocube = None
         for ielement in list(charge_coeffs.keys()):
             if rhocube is None:
                 rhocube = (-charge_coeffs[ielement]*self.ta_object.nametomass(ielement)
-                           *self.pcf[ielement])
+                           * self.pcf[ielement])
             else:
                 rhocube -= (charge_coeffs[ielement]*self.ta_object.nametomass(ielement)
-                            *self.pcf[ielement])
-        dvolume = self.delta[0][0] * self.delta[1][0] * self.delta[2][0]
-        rhob = self.pbox.normalize(self.npoints*4, self.total_frames, dvolume, rhocube)
-        rhob = np.reshape(rhob, (self.npoints, 4))
-        return rhob
+                            * self.pcf[ielement])
+        if ingrid:
+            rhob = self.pbox.normalize(self.npoints*4, self.total_frames, rhocube)
+            rhob = np.reshape(rhob, (self.npoints, 4))
+            return rhob
+        else:
+            return rhocube
 
-    def get_nuclear_charges(self):
-        """ Evaluate the nuclear charges of the solvent (other fragment from mol_id).
+    def get_nuclear_density(self, ingrid=False):
+        """ Evaluate the nuclear charge density of the solvent.
+
+        Parameters
+        ----------
+        ingrid : bool
+            If nuclear charges must be returned with the grid or not.
 
         Returns
         -------
         nuc_charges : np.ndarray((npoints, 4), dtype=float)
             Density of solvent on npoints, everything in a.u.
+            ingrid must be set True
+        nuclei : np.ndarray(npoints, dtype=float)
+            Density charge of solvent in cubic grid, in Angstrom.
 
         """
         nuclei = None
-        for ielement in list(charge_coeffs.keys()):
+        for ielement in list(self.pcf.keys()):
             if nuclei is None:
                 nuclei = self.ta_object.nametomass(ielement)*self.pcf[ielement]
             else:
                 nuclei += self.ta_object.nametomass(ielement)*self.pcf[ielement]
-        dvolume = self.delta[0][0] * self.delta[1][0] * self.delta[2][0]
-        nuc_charges = self.pbox.normalize(self.npoints*4, self.total_frames, dvolume, nuclei)
-        nuc_charges = np.reshape(nuc_charges, (self.npoints, 4))
-        return nuc_charges
+        if ingrid:
+            nuc_charges = self.pbox.normalize(self.npoints*4, self.total_frames, nuclei)
+            nuc_charges = np.reshape(nuc_charges, (self.npoints, 4))
+            return nuc_charges
+        else:
+            return nuclei
 
-    def save_rhob_ongrid(self, extgrid=None):
+    def save_rhob_ongrid(self, extgrid='extragrid.txt'):
         """ Evaluate rhoB on an specific grid.
 
         Parameters
@@ -127,14 +142,12 @@ class MDInterface:
             New set of points for the interpolation.
 
         """
-        if not extgrid:
-            extgrid = np.loadtxt('extgrid.txt')
-        grid = np.zeros((self.npoints, 3))
-        grid = self.pbox.get_grid(grid)
+        # if not extgrid:
+        #    extgrid = np.loadtxt('extgrid.txt')
         raise NotImplementedError
 
     @staticmethod
-    def interpolate_function(function, extgrid):
+    def interpolate_function(function, gridname='extragrid.txt'):
         """ Interpolate some function to an external grid.
 
         This method assumes that the reference values are
@@ -150,12 +163,23 @@ class MDInterface:
         """
         raise NotImplementedError
 
-    def compute_electrostatic_potential(self, extgrid, weights, density):
+    def compute_electrostatic_potential(self, charge_coeffs, gridname='extragrid.txt'):
         """ Evaluate and save electrostatic potential.
 
         Parameters
         ----------
-        extgrid :
+        charge_coeffs : dict('element' : coeff)
+            The ratio between effective charge and nuclear charge: q_B/Z_B.
+        extgrid : np.ndarray((n,3), dtype=float)
+            New set of points for the interpolation.
+            This grid must be in Bohr!
 
         """
-        raise NotImplementedError
+        charge_density = self.get_elec_density(charge_coeffs)
+        charge_density += self.get_nuclear_density()
+        extgrid = np.loadtxt(gridname)
+        # Clean the weights from grid to leave space for the potential
+        extgrid[:, 3] = 0.0
+        oname = 'elects_pot.txt'
+        self.pbox.electrostatic_potential(self.npoints, self.total_frames,
+                                          oname, charge_density, extgrid)
