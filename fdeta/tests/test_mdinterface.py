@@ -48,4 +48,3 @@ def test_mdinterface_histogram():
     gridname = os.path.join(dic, 'data/grid_vemb.dat')
     #mdi.compute_electrostatic_potential(ccoeffs, gridname)
     mdi.rhob_on_grid(ccoeffs, gridname)
-test_mdinterface_histogram()
