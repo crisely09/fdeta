@@ -108,6 +108,7 @@ ext_modules = [
             get_pybind_include(user=True)
         ],
         language='c++',
+        extra_compile_args=['-std=c++11'],
     ),
     Extension(
         'fdeta.fdetmd.cgrid_tools',
@@ -117,6 +118,7 @@ ext_modules = [
             get_pybind_include(),
             get_pybind_include(user=True)
         ],
+        extra_compile_args=['-std=c++11'],
         language='c++',
     ),
 ]
