@@ -30,7 +30,10 @@ install:
     # Activate the test environment
   - conda activate test
     # Build and install package
-  - pip -m install setup.py -e .
+  - pip install numpy
+  - pip install scipy
+  - pip install pybind11
+  - pip install setup.py .
 script:
   - pytest -v --cov=fdeta fdeta/tests/
 
