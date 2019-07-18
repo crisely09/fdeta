@@ -12,6 +12,7 @@ if [ "$TRAVIS_OS_NAME" == "osx" ]; then
     }
     MINICONDA=Miniconda3-latest-MacOSX-x86_64.sh
 else
+    export CXX=g++-4.8 CC=gcc-4.8
     MINICONDA=Miniconda3-latest-Linux-x86_64.sh
 fi
 MINICONDA_HOME=$HOME/miniconda

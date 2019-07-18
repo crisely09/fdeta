@@ -11,6 +11,9 @@ dependencies:
   - codecov
 
     # Pip-only installs
-  #- pip:
-  #  - codecov
+  - pip:
+    - numpy
+    - scipy
+    - matplotlib
+    - pybind11
 
