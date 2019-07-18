@@ -30,7 +30,7 @@ install:
     # Activate the test environment
   - conda activate test
     # Build and install package
-  - pip setup.py -e .
+  - pip -m install setup.py -e .
 script:
   - pytest -v --cov=fdeta fdeta/tests/
 
