@@ -48,8 +48,7 @@ install:
   - cd ..
   - python setup.py install
 script:
-  # Let's try to test only fdeta
-  - python setup.py test
+  - python -m pytest --ignore=lib/pybind11
 
 notifications:
     email: false
