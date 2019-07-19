@@ -176,7 +176,7 @@ class MDInterface:
         xi = refgrid[:, 0]
         yi = refgrid[:, 1]
         zi = refgrid[:, 2]
-        interpolator = interpolate.Rbf(xi, yi, zi, values[:, 3], function=method)
+        interpolator = interpolate.Rbf(xi, yi, zi, values, function=method)
         # interpolator = interpolate.LinearNDInterpolator(rhob[: ,:3], rhob[:, 3])
         # Load grid and clean weights
         extgrid = np.loadtxt(gridname)
