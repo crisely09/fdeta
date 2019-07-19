@@ -41,7 +41,10 @@ install:
   - pip install numpy
   - pip install scipy
   - pip install nose
-  - pip install pybind11
+  - mkdir build
+  - cd build
+  - cmake ..
+  - cd ..
   - python setup.py install
 script:
   - python -m pytest
