@@ -2,7 +2,8 @@
 fdeta.py
 Tools for FDET with MD averaged rhoB densities.
 
-Handles the primary functions
+Handles the primary functions.
+
 """
 
 

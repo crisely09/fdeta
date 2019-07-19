@@ -4,13 +4,13 @@ language: python
 
 matrix:
   include:
-    # Extra includes for OSX since python language is not available by default on OSX
-    - os: osx
-      language: generic
-      env: PYTHON_VER=3.6
-    - os: osx
-      language: generic
-      env: PYTHON_VER=3.7
+#   # Extra includes for OSX since python language is not available by default on OSX
+#   - os: osx
+#     language: generic
+#     env: PYTHON_VER=3.6
+#   - os: osx
+#     language: generic
+#     env: PYTHON_VER=3.7
 
 
     - os: linux
@@ -20,29 +20,35 @@ matrix:
       language: generic
       env: PYTHON_VER=3.7
 
+addons:
+  apt:
+    sources:
+    - ubuntu-toolchain-r-test
+    packages:
+    - gcc-4.8
+    - g++-4.8
 
 before_install:
-    # Additional info about the build
-  - uname -a
-  - df -h
-  - ulimit -a
-
-    # Install the Python environment
+  # Install the Python environment
   - source devtools/travis-ci/before_install.sh
   - python -V
-
 install:
-
     # Create test environment for package
   - python devtools/scripts/create_conda_env.py -n=test -p=$PYTHON_VER devtools/conda-envs/test_env.yaml
     # Activate the test environment
   - conda activate test
     # Build and install package
-  - python setup.py develop --no-deps
-
-
+  - pip install numpy
+  - pip install scipy
+  - pip install nose
+  - pip install pybind11
+  - mkdir build
+  - cd build
+  - cmake ..
+  - cd ..
+  - python setup.py install
 script:
-  - pytest -v --cov=fdeta fdeta/tests/
+  - python -m pytest --ignore=lib/pybind11
 
 notifications:
     email: false
