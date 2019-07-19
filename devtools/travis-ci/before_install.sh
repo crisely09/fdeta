@@ -43,8 +43,8 @@ conda update --quiet --all
 wget https://github.com/pybind/pybind11/archive/v2.3.0.tar.gz
 tar -xvf v2.3.0.tar.gz
 # Copy pybind11 library into our project
-cd $THISDIR
-cd ../../
+cd ~/build/crisely09/fdeta/
+mkdir lib
 cp -r $HOME/pybind11-2.3.0 lib/pybind11
 # Restore original directory
 popd
