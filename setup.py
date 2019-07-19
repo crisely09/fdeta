@@ -32,6 +32,7 @@ class CMakeExtension(Extension):
     def __init__(self, name, sourcedir=''):
         Extension.__init__(self, name, sources=[])
         self.sourcedir = os.path.abspath(sourcedir)
+        self.extra_compile_args=['-std=c++11']
 
 
 class CMakeBuild(build_ext):

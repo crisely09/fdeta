@@ -39,10 +39,10 @@ conda install conda conda-build jinja2 anaconda-client
 conda update --quiet --all
 
 # Install PyBind11
-wget https://github.com/pybind/pybind11/archive/v2.3.1.tar.gz
-tar -xvf v2.3.1.tar.gz
+wget https://github.com/pybind/pybind11/archive/v2.3.0.tar.gz
+tar -xvf v2.3.0.tar.gz
 # Copy pybind11 library into our project
 cd -
-cp -r $HOME/pybind11-2.1.1 lib/pybind11
+cp -r $HOME/pybind11-2.3.0 lib/pybind11
 # Restore original directory
 popd
