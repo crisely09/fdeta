@@ -43,7 +43,7 @@ def test_mdinterface_histogram():
     assert (mdi.delta == 1.0).all()
     ccoeffs = {'O': 1.1, 'H': 0.6}
     rho = mdi.get_elec_density(ccoeffs)
-    assert np.sum(rho)/2 == 20
+    assert np.sum(rho)/2 == -20
     gridname = os.path.join(dic, 'data/grid_vemb.dat')
     mdi.compute_electrostatic_potential(ccoeffs, gridname)
     mdi.rhob_on_grid(ccoeffs, gridname)
