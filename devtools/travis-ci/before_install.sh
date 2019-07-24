@@ -1,5 +1,4 @@
 # Temporarily change directory to $HOME to install software
-THISDIR=$(dirname "${BASH_SOURCE[0]}")
 pushd .
 cd $HOME
 # Make sure some level of pip is installed
@@ -38,13 +37,8 @@ conda config --add channels conda-forge
 conda config --set always_yes yes
 conda install conda conda-build jinja2 anaconda-client
 conda update --quiet --all
+export FDETAPATH=$TRAVIS_BUILD_DIR
+export FDETADATA=$FDETAPATH/fdeta/data
 
-# Install PyBind11
-wget https://github.com/pybind/pybind11/archive/v2.3.0.tar.gz
-tar -xvf v2.3.0.tar.gz
-# Copy pybind11 library into our project
-cd ~/build/crisely09/fdeta/
-mkdir lib
-cp -r $HOME/pybind11-2.3.0 lib/pybind11
 # Restore original directory
 popd

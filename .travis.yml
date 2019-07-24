@@ -42,11 +42,7 @@ install:
   - pip install scipy
   - pip install nose
   - pip install pybind11
-  - mkdir build
-  - cd build
-  - cmake ..
-  - cd ..
-  - python setup.py install
+  - python setup.py build_ext --inplace
 script:
   - python -m pytest --ignore=lib/pybind11
 

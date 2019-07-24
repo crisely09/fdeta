@@ -20,6 +20,8 @@ short_description = __doc__.split("\n")
 # from https://github.com/pytest-dev/pytest-runner#conditional-requirement
 needs_pytest = {'pytest', 'test', 'ptr'}.intersection(sys.argv)
 pytest_runner = ['pytest-runner'] if needs_pytest else []
+os.environ['FDETAPATH'] = '$PWD'
+os.environ['FDETADATA'] = '$FDETAPATH/fdeta/data'
 
 try:
     with open("README.md", "r") as handle:
@@ -222,12 +224,12 @@ setup(
     long_description=long_description,
     long_description_content_type="text/markdown",
     version=versioneer.get_version(),
-    ext_modules=[CMakeExtension('cgrid_tools', 'fdetmd/cgrid_tools.cpp'),
-                 CMakeExtension('auxfns', 'fdetmd/auxfns.cpp')],
-    cdmclass={'build_ext': CMakeBuild,
-              'test' : CatchTestCommand},
-    #ext_modules=ext_modules,
-    #cdmclass={'build_ext': BuildExt},
+    #ext_modules=[CMakeExtension('cgrid_tools', 'fdetmd/cgrid_tools.cpp'),
+    #             CMakeExtension('auxfns', 'fdetmd/auxfns.cpp')],
+    #cdmclass={'build_ext': CMakeBuild,
+    #          'test' : CatchTestCommand},
+    ext_modules=ext_modules,
+    cdmclass={'build_ext': BuildExt},
     license='LGPLv3',
     packages=find_packages(),
     include_package_data=True,
