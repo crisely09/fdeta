@@ -16,7 +16,6 @@ def test_mdinterface_base():
     """Test to initialize `MDInterface`."""
     # Define variables to break code
     dic = os.getenv('FDETADATA')
-    main = os.getenv('FDETAPATH')
     traj = os.path.join(dic, 'test_traj.xyz')
     box_size = np.array([4, 4, 4])
     grid_size = np.array([10, 10, 10])
@@ -27,7 +26,7 @@ def test_mdinterface_base():
                  np.array([-1.8, -1.4, -1., -0.6, -0.2, 0.2, 0.6, 1., 1.4, 1.8]),
                  np.array([-1.8, -1.4, -1., -0.6, -0.2, 0.2, 0.6, 1., 1.4, 1.8])]
     guvref = np.loadtxt(os.path.join(dic, 'test_guv.txt'))
-    guvhere = np.loadtxt(os.path.join(main, 'fdeta/tests/box_grid.txt'))
+    guvhere = np.loadtxt(os.path.join(dic, 'box_grid.txt'))
     np.allclose(mdi.points, ref_edges)
     np.allclose(guvref[:,:-1], guvhere)
 test_mdinterface_base()
