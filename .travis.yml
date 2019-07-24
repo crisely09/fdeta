@@ -46,7 +46,7 @@ install:
   - cd build
   - cmake ..
   - cd ..
-  - python setup.py install
+  - python setup.py build_ext --inplace
 script:
   - python -m pytest --ignore=lib/pybind11
 
