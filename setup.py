@@ -20,6 +20,8 @@ short_description = __doc__.split("\n")
 # from https://github.com/pytest-dev/pytest-runner#conditional-requirement
 needs_pytest = {'pytest', 'test', 'ptr'}.intersection(sys.argv)
 pytest_runner = ['pytest-runner'] if needs_pytest else []
+os.environ['FDETAPATH'] = '$PWD'
+os.environ['FDETADATA'] = '$FDETAPATH/fdeta/data'
 
 try:
     with open("README.md", "r") as handle:
