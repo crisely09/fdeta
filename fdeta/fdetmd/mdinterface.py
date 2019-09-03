@@ -48,6 +48,7 @@ class MDInterface:
         self.total_frames = self.ta_object.Total_number_of_frames
         # Initialize Pybind Class
         self.pbox = BoxGrid(grid_size, self.points)
+        self.bohr = 0.529177249
 
     def save_grid(self, fname='box_grid.txt'):
         """ Get xyz grid into text file.
@@ -90,15 +91,22 @@ class MDInterface:
         """
         rhocube = None
         for ielement in list(charge_coeffs.keys()):
+            print("ielement: ", ielement)
             if rhocube is None:
+                print(self.pcf[ielement])
                 rhocube = (-charge_coeffs[ielement]*self.ta_object.nametocharge(ielement)
                            * self.pcf[ielement])
             else:
+                print(self.pcf[ielement])
                 rhocube -= (charge_coeffs[ielement]*self.ta_object.nametocharge(ielement)
                             * self.pcf[ielement])
         if ingrid:
             rhob = self.pbox.normalize(self.npoints*4, self.total_frames, rhocube)
             rhob = np.reshape(rhob, (self.npoints, 4))
+            dv = self.delta[0][0] * self.delta[1][0] * self.delta[2][0]
+            print("dv = %.12f" % dv)
+            rhob[:, 3] /= dv
+            rhob[:, 3] *= self.bohr**3
             return rhob
         else:
             return rhocube
@@ -129,6 +137,10 @@ class MDInterface:
         if ingrid:
             nuc_charges = self.pbox.normalize(self.npoints*4, self.total_frames, nuclei)
             nuc_charges = np.reshape(nuc_charges, (self.npoints, 4))
+            dv = self.delta[0][0] * self.delta[1][0] * self.delta[2][0]
+            nuc_charges[:, 3] /= dv
+            print("bohr^3 = ", self.bohr**3)
+            nuc_charges[:, 3] *= self.bohr**3
             return nuc_charges
         else:
             return nuclei
@@ -143,10 +155,9 @@ class MDInterface:
 
         """
         rhob = self.get_elec_density(charge_coeffs, ingrid=True)
-        bohr = 0.529177249
         # Normalize charge with respect to volume element
         rhob[:, 3] *= -1.0
-        dv = self.delta[0][0] * self.delta[1][0] * self.delta[2][0] / bohr**3
+        dv = self.delta[0][0] * self.delta[1][0] * self.delta[2][0] / self.bohr**3
         rhob[:, 3] /= dv
         np.savetxt('refrhob.txt', rhob)
         extgrid = self.interpolate_function(rhob[:, :3], rhob[:, 3], gridname)
@@ -200,8 +211,9 @@ class MDInterface:
             This grid must be in Bohr!
 
         """
-        charge_density = self.get_elec_density(charge_coeffs)
-        charge_density += self.get_nuclear_density()
+        net_density = self.get_elec_density(charge_coeffs)
+        net_density += self.get_nuclear_density()
+        charge_density = self.pbox.normalize(self.npoints*4, self.total_frames, net_density)
         extgrid = np.loadtxt(gridname)
         # Clean the weights from grid to leave space for the potential
         extgrid[:, 3] = 0.0
