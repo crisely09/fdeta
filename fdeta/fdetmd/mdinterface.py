@@ -91,20 +91,16 @@ class MDInterface:
         """
         rhocube = None
         for ielement in list(charge_coeffs.keys()):
-            print("ielement: ", ielement)
             if rhocube is None:
-                print(self.pcf[ielement])
                 rhocube = (-charge_coeffs[ielement]*self.ta_object.nametocharge(ielement)
                            * self.pcf[ielement])
             else:
-                print(self.pcf[ielement])
                 rhocube -= (charge_coeffs[ielement]*self.ta_object.nametocharge(ielement)
                             * self.pcf[ielement])
         if ingrid:
             rhob = self.pbox.normalize(self.npoints*4, self.total_frames, rhocube)
             rhob = np.reshape(rhob, (self.npoints, 4))
             dv = self.delta[0][0] * self.delta[1][0] * self.delta[2][0]
-            print("dv = %.12f" % dv)
             rhob[:, 3] /= dv
             rhob[:, 3] *= self.bohr**3
             return rhob
@@ -145,7 +141,7 @@ class MDInterface:
         else:
             return nuclei
 
-    def rhob_on_grid(self, charge_coeffs, gridname='extragrid.txt'):
+    def get_rhob(self, charge_coeffs, gridname='extragrid.txt'):
         """ Evaluate rhoB on an specific grid.
 
         Parameters
@@ -159,9 +155,10 @@ class MDInterface:
         rhob[:, 3] *= -1.0
         dv = self.delta[0][0] * self.delta[1][0] * self.delta[2][0] / self.bohr**3
         rhob[:, 3] /= dv
-        np.savetxt('refrhob.txt', rhob)
+        # np.savetxt('refrhob.txt', rhob)
         extgrid = self.interpolate_function(rhob[:, :3], rhob[:, 3], gridname)
-        np.savetxt('rhob.txt', extgrid)
+        return extgrid
+
 
     @staticmethod
     def interpolate_function(refgrid, values, gridname='extragrid.txt', method='linear'):

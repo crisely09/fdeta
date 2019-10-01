@@ -9,6 +9,7 @@ import numpy as np
 
 from fdeta.analysis import TrajectoryAnalysis
 from fdeta.fdetmd.mdinterface import MDInterface
+from fdeta.fdetmd.dft import compute_nad_lda_all
 
 
 def test_mdinterface_base():
@@ -46,7 +47,8 @@ def test_mdinterface_histogram():
     assert np.sum(rho)/2 == -20
     gridname = os.path.join(dic, 'grid_vemb.dat')
     mdi.compute_electrostatic_potential(ccoeffs, gridname)
-    mdi.rhob_on_grid(ccoeffs, gridname)
+    rhob = mdi.get_rhob(ccoeffs, gridname)
+    np.savetxt('rhob.txt', rhob)
 
 
 def test_mdinterface_acetone_w2():
@@ -69,6 +71,14 @@ def test_mdinterface_acetone_w2():
     total = rho[:, 3] + nuc[:, 3]
     np.savetxt('total_charge.txt', total)
     mdi.compute_electrostatic_potential(ccoeffs, gridname)
+    rhoB = np.fabs(mdi.get_rhob(ccoeffs, gridname)[:, 3])
+    # read rhoA
+    inp = np.loadtxt(os.path.join(dic, 'grid_rhoA_acetone.dat'))
+    rhoA = np.fabs(inp[:, 3])
+    enad, vnad = compute_nad_lda_all(rhoA, rhoB)
+    vemb = np.loadtxt('elects_pot.txt') 
+    vemb[:, 3] += vnad
+    np.savetxt('vemb_pot.txt', vemb)
 
 
 if __name__ == "__main__":
