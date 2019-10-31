@@ -159,7 +159,6 @@ class MDInterface:
         extgrid = self.interpolate_function(rhob[:, :3], rhob[:, 3], gridname)
         return extgrid
 
-
     @staticmethod
     def interpolate_function(refgrid, values, gridname='extragrid.txt', method='linear'):
         """ Interpolate some function to an external grid.
@@ -181,19 +180,20 @@ class MDInterface:
 
         """
         from scipy import interpolate
-        xi = refgrid[:, 0]
-        yi = refgrid[:, 1]
-        zi = refgrid[:, 2]
-        interpolator = interpolate.Rbf(xi, yi, zi, values, function=method)
-        # interpolator = interpolate.LinearNDInterpolator(rhob[: ,:3], rhob[:, 3])
+        # xi = refgrid[:, 0]
+        # yi = refgrid[:, 1]
+        # zi = refgrid[:, 2]
+        # interpolator = interpolate.Rbf(xi, yi, zi, values, function=method)
         # Load grid and clean weights
+        # extgrid = np.loadtxt(gridname)
+        # xj = extgrid[:, 0]
+        # yj = extgrid[:, 1]
+        # zj = extgrid[:, 2]
+        # extgrid[:, 3] = interpolator(xj, yj, zj)
+        interpolator = interpolate.LinearNDInterpolator(refgrid, values)
         extgrid = np.loadtxt(gridname)
         extgrid[:, 3] = 0.0
-        xj = extgrid[:, 0]
-        yj = extgrid[:, 1]
-        zj = extgrid[:, 2]
-        extgrid[:, 3] = interpolator(xj, yj, zj)
-        # extgrid[:, 3] = interpolator(extgrid[:, :3])
+        extgrid[:, 3] = interpolator(extgrid[:, :3])
         return extgrid
 
     def compute_electrostatic_potential(self, charge_coeffs, gridname='extragrid.txt'):

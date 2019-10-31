@@ -71,12 +71,15 @@ def test_mdinterface_acetone_w2():
     total = rho[:, 3] + nuc[:, 3]
     np.savetxt('total_charge.txt', total)
     mdi.compute_electrostatic_potential(ccoeffs, gridname)
-    rhoB = np.fabs(mdi.get_rhob(ccoeffs, gridname)[:, 3])
+    rhoB = mdi.get_rhob(ccoeffs, gridname)[:, 3]
+    rhoB = np.nan_to_num(mdi.get_rhob(ccoeffs, gridname)[:, 3])
+    assert np.all(rhoB >= 0)
     # read rhoA
     inp = np.loadtxt(os.path.join(dic, 'grid_rhoA_acetone.dat'))
-    rhoA = np.fabs(inp[:, 3])
+    rhoA = inp[:, 3]
+    assert np.all(rhoA >= 0)
     enad, vnad = compute_nad_lda_all(rhoA, rhoB)
-    vemb = np.loadtxt('elects_pot.txt') 
+    vemb = np.loadtxt('elects_pot.txt')
     vemb[:, 3] += vnad
     np.savetxt('vemb_pot.txt', vemb)
 
