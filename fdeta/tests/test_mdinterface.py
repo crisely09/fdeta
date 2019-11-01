@@ -7,9 +7,9 @@ Unit and regression test for the fdeta package.
 import os
 import numpy as np
 
-from nose.tools import assert_raises
 from fdeta.analysis import TrajectoryAnalysis
 from fdeta.fdetmd.mdinterface import MDInterface
+from fdeta.fdetmd.dft import compute_nad_lda_all
 
 
 def test_mdinterface_base():
@@ -28,8 +28,8 @@ def test_mdinterface_base():
     guvref = np.loadtxt(os.path.join(dic, 'test_guv.txt'))
     guvhere = np.loadtxt(os.path.join(dic, 'box_grid.txt'))
     np.allclose(mdi.points, ref_edges)
-    np.allclose(guvref[:,:-1], guvhere)
-test_mdinterface_base()
+    np.allclose(guvref[:, :-1], guvhere)
+
 
 def test_mdinterface_histogram():
     """Test to initialize `MDInterface`."""
@@ -47,4 +47,44 @@ def test_mdinterface_histogram():
     assert np.sum(rho)/2 == -20
     gridname = os.path.join(dic, 'grid_vemb.dat')
     mdi.compute_electrostatic_potential(ccoeffs, gridname)
-    mdi.rhob_on_grid(ccoeffs, gridname)
+    rhob = mdi.get_rhob(ccoeffs, gridname)
+    np.savetxt('rhob.txt', rhob)
+
+
+def test_mdinterface_acetone_w2():
+    """Test  `MDInterface`."""
+    # Define variables
+    dic = os.getenv('FDETADATA')
+    traj = os.path.join(dic, 'traj_acetone_w2.xyz')
+    box_size = np.array([10, 10, 10])
+    grid_size = np.array([10, 10, 10])
+    ta = TrajectoryAnalysis(traj)
+    mdi = MDInterface(ta, box_size, grid_size)
+    mdi.save_grid()
+    gridname = os.path.join(dic, 'grid_vemb_acetone.dat')
+    ccoeffs = {'O': 1.1, 'H': 0.6}
+    rho = mdi.get_elec_density(ccoeffs, ingrid=True)
+    rho[:, :3] *= mdi.bohr
+    np.savetxt('rhob_acetone.txt', rho)
+    nuc = mdi.get_nuclear_density(ingrid=True)
+    np.savetxt('nuc_charge_acetone.txt', nuc)
+    total = rho[:, 3] + nuc[:, 3]
+    np.savetxt('total_charge.txt', total)
+    mdi.compute_electrostatic_potential(ccoeffs, gridname)
+    rhoB = mdi.get_rhob(ccoeffs, gridname)[:, 3]
+    rhoB = np.nan_to_num(mdi.get_rhob(ccoeffs, gridname)[:, 3])
+    assert np.all(rhoB >= 0)
+    # read rhoA
+    inp = np.loadtxt(os.path.join(dic, 'grid_rhoA_acetone.dat'))
+    rhoA = inp[:, 3]
+    assert np.all(rhoA >= 0)
+    enad, vnad = compute_nad_lda_all(rhoA, rhoB)
+    vemb = np.loadtxt('elects_pot.txt')
+    vemb[:, 3] += vnad
+    np.savetxt('vemb_pot.txt', vemb)
+
+
+if __name__ == "__main__":
+    test_mdinterface_base()
+    test_mdinterface_histogram()
+    test_mdinterface_acetone_w2()

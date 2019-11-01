@@ -1,6 +1,7 @@
 #include <pybind11/pybind11.h>
 #include <pybind11/numpy.h>
 #include <stdio.h>
+#include<iostream>
 #include <math.h>
 
 namespace py = pybind11;
@@ -150,16 +151,18 @@ py::array_t<double> BoxGrid::normalize(int length, int nframes,
     auto result = py::array_t<double>(rlen);
     py::buffer_info buf2 = result.request();
     double *cresult = (double *) buf2.ptr;
-    ssize_t count = 0, vcount = 0;
-    for(ssize_t k=0; k<rlen; k++){
-        if ( (count+1) % 4 == 0){
-            cresult[count] = cvals[vcount]/nframes;
-            vcount++;
-        } else{
-            cresult[count] = cgrid[k-vcount]/BOHR;
+    int count = 0, gcount = 0;
+    for(int k=0; k<nz; k++){
+        for(int j=0; j<ny; j++){
+            for(int i=0; i<nx; i++){
+                cresult[count] = cgrid[gcount]/BOHR;
+                cresult[count+1] = cgrid[gcount+1]/BOHR;
+                cresult[count+2] = cgrid[gcount+2]/BOHR;
+                cresult[count+3] = cvals[i*ny*nz+j*nz+k]/nframes;
+                gcount += 3;
+                count += 4;
+            }
         }
-        count++;
-
     }
     delete [] cgrid;
 
@@ -183,12 +186,6 @@ void BoxGrid::electrostatic_potential(int npoints, int nframes, const char *ofna
     double *cvals = (double *) buf1.ptr,
            *cresult = (double *) buf2.ptr;
 
-    // Make xyz grid
-    ssize_t gridlen = (ssize_t) npoints*3;
-    double *cgrid;
-    cgrid = new double [gridlen];
-    make_grid(cgrid);
-
     // Open file to print array
     FILE * file;
     file = fopen(ofname, "w");
@@ -203,13 +200,13 @@ void BoxGrid::electrostatic_potential(int npoints, int nframes, const char *ofna
         for(int i=0; i<npoints; i++){
             double *r1 = new double [3];
             double d;
-            r1[0] = cgrid[i+count]/BOHR;
-            r1[1] = cgrid[i+count+1]/BOHR;
-            r1[2] = cgrid[i+count+2]/BOHR;
+            r1[0] = cvals[i+count];
+            r1[1] = cvals[i+count+1];
+            r1[2] = cvals[i+count+2];
             d = distance(r0, r1);
             // avoid very short distances
-            if (d > 1e-6){
-                cresult[j+vcount+3] += cvals[i]/nframes/d;
+            if (d > 1e-5){
+                cresult[j+vcount+3] += cvals[i+count+3]/d;
             }
             count += 3;
         }
@@ -220,9 +217,6 @@ void BoxGrid::electrostatic_potential(int npoints, int nframes, const char *ofna
 
     // Close grid file
     fclose(file);
-
-    // Clean dynamically allocated arrays
-    delete [] cgrid;
 
 };
 
