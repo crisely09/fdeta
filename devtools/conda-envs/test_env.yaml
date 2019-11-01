@@ -16,6 +16,5 @@ dependencies:
     - scipy
     - nose
     - matplotlib
-    - pybind11
     - pyscf
-
+    - pybind11
