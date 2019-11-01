@@ -205,7 +205,7 @@ void BoxGrid::electrostatic_potential(int npoints, int nframes, const char *ofna
             r1[2] = cvals[i+count+2];
             d = distance(r0, r1);
             // avoid very short distances
-            if (d > 1e-5){
+            if (d > 1e-6){
                 cresult[j+vcount+3] += cvals[i+count+3]/d;
             }
             count += 3;

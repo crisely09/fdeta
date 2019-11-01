@@ -17,7 +17,7 @@ class MDInterface:
     ta_object : TrajectoryAnalysis object
 
     """
-    def __init__(self, ta_object, box_size, grid_size, mol_id=0):
+    def __init__(self, ta_object, box_size, grid_size, mol_id=0, average_solute=False):
         """ Create a pcf ta_object.
 
         Parameters
@@ -31,15 +31,27 @@ class MDInterface:
         mol_id : int
             Index indicating which molecule(s) to take as solute.
             By default solute = 0.
+        average_solute : bool
+            Whether the solute molecules also need to be averaged.
 
         """
+        if mol_id == 0:
+            solv_id = 1
+        else:
+            solv_id = 0
         self.ta_object = ta_object
         histogram_range = np.asarray([-box_size/2., box_size/2.]).T
+        # First align solute
         self.ta_object.select(mol_id)
         self.ta_object.align_along_trajectory(mol_id, self.ta_object.Topology)
-        self.ta_object.get_average_structure(mol_id)
+        if average_solute:
+            self.ta_object.get_average_structure(mol_id)
+        # Align solvent and find the averaged structure
+        self.ta_object.select(solv_id)
+        self.ta_object.align_along_trajectory(solv_id, self.ta_object.Topology)
+        self.ta_object.get_average_structure(solv_id)
         edges, self.pcf = self.ta_object.compute_pair_correlation_function(histogram_range,
-                                                                           grid_size, mol_id)
+                                                                           grid_size, solv_id)
         self.npoints = np.cumprod(grid_size)[-1]
         self.delta = sp.diff(edges)
         edges = np.array(edges)

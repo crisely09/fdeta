@@ -57,7 +57,7 @@ def test_mdinterface_acetone_w2():
     dic = os.getenv('FDETADATA')
     traj = os.path.join(dic, 'traj_acetone_w2.xyz')
     box_size = np.array([10, 10, 10])
-    grid_size = np.array([10, 10, 10])
+    grid_size = np.array([15, 15, 15])
     ta = TrajectoryAnalysis(traj)
     mdi = MDInterface(ta, box_size, grid_size)
     mdi.save_grid()
@@ -71,9 +71,9 @@ def test_mdinterface_acetone_w2():
     total = rho[:, 3] + nuc[:, 3]
     np.savetxt('total_charge.txt', total)
     mdi.compute_electrostatic_potential(ccoeffs, gridname)
-    rhoB = mdi.get_rhob(ccoeffs, gridname)[:, 3]
     rhoB = np.nan_to_num(mdi.get_rhob(ccoeffs, gridname)[:, 3])
     assert np.all(rhoB >= 0)
+    np.savetxt('final_rhob.txt', rhoB)
     # read rhoA
     inp = np.loadtxt(os.path.join(dic, 'grid_rhoA_acetone.dat'))
     rhoA = inp[:, 3]
