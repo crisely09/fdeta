@@ -185,7 +185,7 @@ class TrajectoryAnalysis(Trajectory):
             self.structure_averaged = np.mean(np.array(list(self.alignement.values()))[:, 0], axis=0)
         self.save(molecular_id, self.structure_averaged)
 
-    def compute_pair_correlation_function(self, pcf_range, bins, *molecular_id):
+    def compute_pair_correlation_function(self, pcf_range, bins, solute_id=0):
         """ Given the 'alignement' variable the method computes the pair correlation function (pcf)
         for the entire system in 3 steps:
         a) translation to the solute centroid
@@ -203,8 +203,8 @@ class TrajectoryAnalysis(Trajectory):
             along each dimension.
             2) The number of bins for each dimension (nx, ny, … =bins)
             3) The number of bins for all dimensions (nx=ny=…=bins).
-        molecular_id : int
-            The unique number determining the molecule.
+        solute_id : int
+            The unique number determining the molecule. This molecule will be excluded!
 
         """
         np.set_printoptions(precision=6,  threshold=np.inf)
@@ -217,7 +217,7 @@ class TrajectoryAnalysis(Trajectory):
         self.Frames_aligned = np.asarray(tmpframes)
         del tmpframes
         # Getting indicies for solute (molecules to be excluded)
-        self.Solute_index = np.where(self.Frames[0, :, 3] == molecular_id)[0]
+        self.Solute_index = np.where(self.Frames[0, :, 3] == solute_id)[0]
         # Getting indicies for each type of element
         self.edges = None
         for ielement in set(self.Elements):

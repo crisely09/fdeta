@@ -51,7 +51,7 @@ class MDInterface:
         self.ta_object.align_along_trajectory(solv_id, self.ta_object.Topology)
         self.ta_object.get_average_structure(solv_id)
         edges, self.pcf = self.ta_object.compute_pair_correlation_function(histogram_range,
-                                                                           grid_size, solv_id)
+                                                                           grid_size, mol_id)
         self.npoints = np.cumprod(grid_size)[-1]
         self.delta = sp.diff(edges)
         edges = np.array(edges)
