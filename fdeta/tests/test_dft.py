@@ -24,7 +24,7 @@ def test_functionals():
     ex_nad, vx_nad = compute_nad_lda(rhoa*2.0, rhob*2.0, 'exchange')
     et_nad, vt_nad = compute_nad_lda(rhoa*2.0, rhob*2.0, 'kinetic')
     # Load references produced with Horton (libxc library)
-    refs = np.load('vxct_nad.npz')
+    refs = np.load(os.path.join(dic, 'vxct_nad.npz'))
     assert np.allclose(vx_nad, refs['vx_nad'])
     assert np.allclose(vt_nad, refs['vt_nad'])
     assert np.allclose(vc_nad, refs['vc_nad'])
