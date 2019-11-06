@@ -16,6 +16,14 @@ from setuptools.command.build_ext import build_ext
 from setuptools import find_packages
 import versioneer
 
+
+'''If there are problems with the compiler, then compile the extensions first:
+c++ -O3 -Wall -shared -std=c++11 -fPIC `python3 -m pybind11 --includes` auxfns.cpp -o auxfns.so
+c++ -O3 -Wall -shared -std=c++11 -fPIC `python3 -m pybind11 --includes` cgrid_tools.cpp -o cgrid_tools.so
+
+and then just add the module to the PYTHONPATH
+'''
+
 short_description = __doc__.split("\n")
 # from https://github.com/pytest-dev/pytest-runner#conditional-requirement
 needs_pytest = {'pytest', 'test', 'ptr'}.intersection(sys.argv)

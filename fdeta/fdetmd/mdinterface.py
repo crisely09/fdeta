@@ -147,7 +147,6 @@ class MDInterface:
             nuc_charges = np.reshape(nuc_charges, (self.npoints, 4))
             dv = self.delta[0][0] * self.delta[1][0] * self.delta[2][0]
             nuc_charges[:, 3] /= dv
-            print("bohr^3 = ", self.bohr**3)
             nuc_charges[:, 3] *= self.bohr**3
             return nuc_charges
         else:
@@ -165,8 +164,6 @@ class MDInterface:
         rhob = self.get_elec_density(charge_coeffs, ingrid=True)
         # Normalize charge with respect to volume element
         rhob[:, 3] *= -1.0
-        dv = self.delta[0][0] * self.delta[1][0] * self.delta[2][0] / self.bohr**3
-        rhob[:, 3] /= dv
         # np.savetxt('refrhob.txt', rhob)
         extgrid = self.interpolate_function(rhob[:, :3], rhob[:, 3], gridname)
         return extgrid
