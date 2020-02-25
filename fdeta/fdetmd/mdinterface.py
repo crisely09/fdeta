@@ -166,11 +166,12 @@ class MDInterface:
         # Normalize charge with respect to volume element
         rhob[:, 3] *= -1.0
         # np.savetxt('refrhob.txt', rhob)
-        extgrid = self.interpolate_function(rhob[:, :3], rhob[:, 3], gridname)
+        extgrid = interpolate_function(rhob[:, :3], rhob[:, 3], gridname)
         return extgrid
 
     @staticmethod
-    def interpolate_function(refgrid, values, gridname='extragrid.txt', function):
+    def interpolate_function(refgrid, values, gridname='extragrid.txt',
+                             function='gaussian'):
         """ Interpolate some function to an external grid.
 
         This method assumes that the reference values are
