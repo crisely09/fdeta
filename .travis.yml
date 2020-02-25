@@ -45,7 +45,7 @@ install:
   - pip install qcelemental
   - python setup.py build_ext --inplace
 script:
-  - python -m pytest --ignore=lib/pybind11
+  - pytest -v --cov=fdeta fdeta/tests/
 
 notifications:
     email: false

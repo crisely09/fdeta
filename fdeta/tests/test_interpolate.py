@@ -50,7 +50,7 @@ def test_interpolate_helium():
   # print("Points: \n", md.points)
   # print(md.npoints*3)
     grid = np.zeros((md.npoints, 3))
-    grid = md.pbox.get_grid(grid)
+    grid = md.pbox.get_grid(grid, False)
 
     # Use PySCF to evaluate density
     from pyscf import gto, scf, dft
@@ -81,13 +81,13 @@ def test_interpolate_helium():
     xs = grid[:, 0]
     ys = grid[:, 1]
     zs = grid[:, 2]
-    print(rho_all.shape)
+    # print(rho_all.shape)
 
     grids = gen_grid.Grids(mol0)
     grids.level = 4
     grids.build()
-    print(rho_all.shape)
-    print(grids.coords.shape)
+    # print(rho_all.shape)
+    # print(grids.coords.shape)
 
     xdata = grids.coords[:, 0]
     ydata = grids.coords[:, 1]
@@ -112,7 +112,7 @@ def test_interpolate_helium():
       # plt.xlim(-1.0,  1.0)
       # plt.ylim(-1.0, 1.0)
       # plt.show()
-    print(minmax)
+    # print(minmax)
     mol1 = gto.M(atom="""He  0.000   0.000   2.500""",
                      basis='sto-3g')
     # Solve HF and get density
@@ -133,8 +133,8 @@ def test_interpolate_helium():
         new_rho1 = interpolator(xdata, ydata, zdata)
         minmax1.append([function, min(abs(new_rho1 - real_rho1)), max(abs(new_rho1 - real_rho1))])
         p = np.where(abs(new_rho1-real_rho1) == minmax1[-1][2])
-        print("Point with problems", grids.coords[p[0]])
-        print(len(np.where(abs(new_rho1-real_rho1)>1e-1)))
+        # print("Point with problems", grids.coords[p[0]])
+        # print(len(np.where(abs(new_rho1-real_rho1)>1e-1)))
       # fig = plt.figure()
       # ax = fig.add_subplot(projection='3d')
       # ax.scatter3D(xdata, ydata, new_rho1, c=new_rho1, cmap='Greens')
@@ -142,10 +142,10 @@ def test_interpolate_helium():
       # plt.xlim(-1.0,  1.0)
       # plt.ylim(-1.0, 1.0)
       # plt.show()
-    print(minmax1)
+    # print(minmax1)
 
 
 
 if __name__ == "__main__":
-#   test_interpolation_base()
+    test_interpolation_base()
     test_interpolate_helium()

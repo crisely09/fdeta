@@ -167,7 +167,7 @@ class MDInterface:
         # Normalize charge with respect to volume element
         rhob[:, 3] *= -1.0
         # np.savetxt('refrhob.txt', rhob)
-        extgrid = interpolate_function(rhob[:, :3], rhob[:, 3], gridname)
+        extgrid = self.interpolate_function(rhob[:, :3], rhob[:, 3], gridname)
         return extgrid
 
     @staticmethod
