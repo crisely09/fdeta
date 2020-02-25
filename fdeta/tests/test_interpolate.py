@@ -40,13 +40,15 @@ def test_interpolation_base():
 def test_interpolate_helium():
     """Check interpolation for He density."""
     # define ta_object
-    traj = TrajectoryAnalysis("he_traj.txt")
+    dic = os.getenv('FDETADATA')
+    filetraj = os.path.join(dic, 'he_traj.txt')
+    traj = TrajectoryAnalysis(filetraj)
     box_size = np.array([2, 2, 2])
     grid_size = np.array([5, 5, 5])
     # Use the mdinterface to create a cubic grid
     md = MDInterface(traj, box_size, grid_size)
-    print("Points: \n", md.points)
-    print(md.npoints*3)
+  # print("Points: \n", md.points)
+  # print(md.npoints*3)
     grid = np.zeros((md.npoints, 3))
     grid = md.pbox.get_grid(grid)
 
