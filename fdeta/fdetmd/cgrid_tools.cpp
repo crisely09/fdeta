@@ -15,6 +15,7 @@ class BoxGrid {
         const double BOHR = 0.529177249;
         virtual double distance(double* r0, double* r1);
         virtual void make_grid(double *cgrid);
+        virtual void make_grid_corder(double *cgrid);
     public:
         // Virtual destructor
         ~BoxGrid() {};
@@ -24,9 +25,11 @@ class BoxGrid {
         virtual void electrostatic_potential(int npoints, int nframes, const char *ofname,
                                              py::array_t<double, py::array::c_style> chargedens,
                                              py::array_t<double, py::array::c_style> extgrid);
-        virtual py::array_t<double> get_grid(py::array_t<double, py::array::c_style> grid);
+        virtual py::array_t<double> get_grid(py::array_t<double, py::array::c_style> grid,
+                                             bool corder);
         virtual py::array_t<double> normalize(int length, int nframes,
-                                              py::array_t<double, py::array::c_style> values);
+                                              py::array_t<double, py::array::c_style> values,
+                                              bool corder);
         virtual void save_grid(int grid_length, const char *fname);
 
 };
@@ -82,17 +85,40 @@ void BoxGrid::make_grid(double *cgrid){
 };
 
 /*
+ *  \brief Construct the array in xyz format from cubic form (C order).
+ *
+ *  \param cgrid    The final array with grid points.
+ */
+void BoxGrid::make_grid_corder(double *cgrid){
+    // Fill out the grid array
+    int count = 0;
+    for(int i=0; i<nx; i++){
+        for(int j=0; j<ny; j++){
+            for(int k=0; k<nz; k++){
+                cgrid[count] = cedges[i];
+                cgrid[count+1] = cedges[nz+j];
+                cgrid[count+2] = cedges[nz+ny+k];
+                count += 3;
+            }
+        }
+    }
+};
+
+/*
  * \brief Return xyz grid from histrogram.
  *
- * \param grid Numpy array to store the grid.
+ * \param grid    Numpy array to store the grid.
+ * \param corder  Wheter to use C or Histrogram order.
  */
-py::array_t<double> BoxGrid::get_grid(py::array_t<double, py::array::c_style> grid){
+py::array_t<double> BoxGrid::get_grid(py::array_t<double, py::array::c_style> grid,
+                                      bool corder=false){
     // Get the information from the python objects
     py::buffer_info buf = grid.request();
 
     // now make cpp arrays
     double *cgrid = (double *) buf.ptr;
-    make_grid(cgrid);
+    if (!corder) make_grid(cgrid);
+    else make_grid_corder(cgrid);
 
     return grid;
 }
@@ -133,18 +159,15 @@ void BoxGrid::save_grid(int grid_length, const char *fname){
  * \param length      Total length of grid.
  * \param nframes     Total number of frames from MD.
  * \param values      Values of Rhob from histogram, in Angstrom.
+ * \param corder  Wheter to use C or Histrogram order.
  */
 py::array_t<double> BoxGrid::normalize(int length, int nframes,
-                                      py::array_t<double, py::array::c_style> values){
+                                      py::array_t<double, py::array::c_style> values,
+                                      bool corder=false){
     // Get the information from python objects
     py::buffer_info buf1 = values.request();
     double *cvals = (double *) buf1.ptr;
 
-    // Make xyz grid
-    int gridlen = length*3/4;
-    double *cgrid;
-    cgrid = new double [gridlen];
-    make_grid(cgrid);
 
     // New Numpy array
     ssize_t rlen = (ssize_t) length;
@@ -152,15 +175,36 @@ py::array_t<double> BoxGrid::normalize(int length, int nframes,
     py::buffer_info buf2 = result.request();
     double *cresult = (double *) buf2.ptr;
     int count = 0, gcount = 0;
-    for(int k=0; k<nz; k++){
-        for(int j=0; j<ny; j++){
-            for(int i=0; i<nx; i++){
-                cresult[count] = cgrid[gcount]/BOHR;
-                cresult[count+1] = cgrid[gcount+1]/BOHR;
-                cresult[count+2] = cgrid[gcount+2]/BOHR;
-                cresult[count+3] = cvals[i*ny*nz+j*nz+k]/nframes;
-                gcount += 3;
-                count += 4;
+    // Make xyz grid
+    int gridlen = length*3/4;
+    double *cgrid;
+    cgrid = new double [gridlen];
+    if (!corder){
+        make_grid(cgrid);
+        for(int k=0; k<nz; k++){
+            for(int j=0; j<ny; j++){
+                for(int i=0; i<nx; i++){
+                    cresult[count] = cgrid[gcount]/BOHR;
+                    cresult[count+1] = cgrid[gcount+1]/BOHR;
+                    cresult[count+2] = cgrid[gcount+2]/BOHR;
+                    cresult[count+3] = cvals[i*ny*nz+j*nz+k]/nframes;
+                    gcount += 3;
+                    count += 4;
+                }
+            }
+        }
+    } else{
+        make_grid_corder(cgrid);
+        for(int i=0; i<nx; i++){
+            for(int j=0; j<ny; j++){
+                for(int k=0; k<nz; k++){
+                    cresult[count] = cgrid[gcount]/BOHR;
+                    cresult[count+1] = cgrid[gcount+1]/BOHR;
+                    cresult[count+2] = cgrid[gcount+2]/BOHR;
+                    cresult[count+3] = cvals[k*ny*nx+j*nx+i]/nframes;
+                    gcount += 3;
+                    count += 4;
+                }
             }
         }
     }
