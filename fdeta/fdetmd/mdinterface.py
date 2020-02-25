@@ -7,6 +7,7 @@ The Pair Correlation Function related tools.
 import numpy as np
 import scipy as sp
 from fdeta.fdetmd.cgrid_tools import BoxGrid
+from fdeta.fdetmd.interpolate import interpolate_function
 
 
 class MDInterface:
@@ -169,7 +170,7 @@ class MDInterface:
         return extgrid
 
     @staticmethod
-    def interpolate_function(refgrid, values, gridname='extragrid.txt', method='linear'):
+    def interpolate_function(refgrid, values, gridname='extragrid.txt', function):
         """ Interpolate some function to an external grid.
 
         This method assumes that the reference values are
@@ -183,26 +184,13 @@ class MDInterface:
             Reference function values to create interpolator.
         gridname : string
             File with new set of points for the interpolation.
-        method : string
+        function : string
             Name of method for the interpolation. Options are:
-            `linear`, `cubic`.
+            `linear`, `cubic`, `gaussian`.
 
         """
-        from scipy import interpolate
-        # xi = refgrid[:, 0]
-        # yi = refgrid[:, 1]
-        # zi = refgrid[:, 2]
-        # interpolator = interpolate.Rbf(xi, yi, zi, values, function=method)
-        # Load grid and clean weights
-        # extgrid = np.loadtxt(gridname)
-        # xj = extgrid[:, 0]
-        # yj = extgrid[:, 1]
-        # zj = extgrid[:, 2]
-        # extgrid[:, 3] = interpolator(xj, yj, zj)
-        interpolator = interpolate.LinearNDInterpolator(refgrid, values)
         extgrid = np.loadtxt(gridname)
-        extgrid[:, 3] = 0.0
-        extgrid[:, 3] = interpolator(extgrid[:, :3])
+        extgrid = interpolate_function(refgrid, values, extgrid, function)
         return extgrid
 
     def compute_electrostatic_potential(self, charge_coeffs, gridname='extragrid.txt'):

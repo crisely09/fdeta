@@ -32,8 +32,8 @@ def test():
 def test_base():
     """Basic checks for MDTrajectory class."""
     dic = os.getenv('FDETADATA')
-    ftraj = 'he_traj.txt'
-    fcharges = 'he_charges.txt'
+    ftraj = os.path.join(dic, 'he_traj.txt')
+    fcharges = os.path.join(dic, 'he_charges.txt')
     traj = MDTrajectory(ftraj, fcharges) 
     structure = traj.get_structure_from_topology(0, 0, traj.topology)
     assert np.allclose(structure, [0., 0., 0.])
