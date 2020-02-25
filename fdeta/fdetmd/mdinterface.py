@@ -111,7 +111,7 @@ class MDInterface:
                 rhocube -= (charge_coeffs[ielement]*self.ta_object.nametocharge(ielement)
                             * self.pcf[ielement])
         if ingrid:
-            rhob = self.pbox.normalize(self.npoints*4, self.total_frames, rhocube)
+            rhob = self.pbox.normalize(self.npoints*4, self.total_frames, rhocube, False)
             rhob = np.reshape(rhob, (self.npoints, 4))
             dv = self.delta[0][0] * self.delta[1][0] * self.delta[2][0]
             rhob[:, 3] /= dv
@@ -144,7 +144,8 @@ class MDInterface:
             else:
                 nuclei += self.ta_object.nametocharge(ielement)*self.pcf[ielement]
         if ingrid:
-            nuc_charges = self.pbox.normalize(self.npoints*4, self.total_frames, nuclei)
+            nuc_charges = self.pbox.normalize(self.npoints*4, self.total_frames,
+                                              nuclei, False)
             nuc_charges = np.reshape(nuc_charges, (self.npoints, 4))
             dv = self.delta[0][0] * self.delta[1][0] * self.delta[2][0]
             nuc_charges[:, 3] /= dv
@@ -208,7 +209,8 @@ class MDInterface:
         """
         net_density = self.get_elec_density(charge_coeffs)
         net_density += self.get_nuclear_density()
-        charge_density = self.pbox.normalize(self.npoints*4, self.total_frames, net_density)
+        charge_density = self.pbox.normalize(self.npoints*4, self.total_frames, net_density,
+                                             False)
         extgrid = np.loadtxt(gridname)
         # Clean the weights from grid to leave space for the potential
         extgrid[:, 3] = 0.0
