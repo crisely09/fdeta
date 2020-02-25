@@ -167,11 +167,12 @@ class MDInterface:
         # Normalize charge with respect to volume element
         rhob[:, 3] *= -1.0
         # np.savetxt('refrhob.txt', rhob)
-        extgrid = self.interpolate_function(rhob[:, :3], rhob[:, 3], gridname)
+        print("rho shape", rhob.shape)
+        extgrid = self.interpolate(rhob[:, :3], rhob[:, 3], gridname)
         return extgrid
 
     @staticmethod
-    def interpolate_function(refgrid, values, gridname='extragrid.txt',
+    def interpolate(refgrid, values, gridname='extragrid.txt',
                              function='gaussian'):
         """ Interpolate some function to an external grid.
 
@@ -191,8 +192,8 @@ class MDInterface:
             `linear`, `cubic`, `gaussian`.
 
         """
-        extgrid = np.loadtxt(gridname)
-        extgrid = interpolate_function(refgrid, values, extgrid, function)
+        grid = np.loadtxt(gridname)
+        extgrid = interpolate_function(refgrid, values, grid, function)
         return extgrid
 
     def compute_electrostatic_potential(self, charge_coeffs, gridname='extragrid.txt'):

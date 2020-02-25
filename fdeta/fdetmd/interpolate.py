@@ -37,9 +37,8 @@ def interpolate_function(refgrid: np.ndarray,
     ys = refgrid[:, 1]
     zs = refgrid[:, 2]
     interpolator = interpolate.Rbf(xs, ys, zs, values, function=function)
-    # Clear values previously stored
-    grid[:, 3] = 0.0
-    grid[:, 3] = interpolator(grid[:, :3])
+    # Replace values previously stored
+    grid[:, 3] = interpolator(grid[:, 0], grid[:, 1], grid[:, 2])
     return grid
 
 

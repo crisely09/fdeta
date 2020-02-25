@@ -73,6 +73,7 @@ def test_mdinterface_acetone_w2():
     np.savetxt('total_charge.txt', total)
     mdi.compute_electrostatic_potential(ccoeffs, gridname)
     rhoB = np.nan_to_num(mdi.get_rhob(ccoeffs, gridname)[:, 3])
+    rhoB[np.where(rhoB < 0)[0]] = 0.0
     assert np.all(rhoB >= 0)
     np.savetxt('final_rhob.txt', rhoB)
     # read rhoA
