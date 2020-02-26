@@ -2,6 +2,9 @@
 """Some tools to handle cubefile format.
 
 By C.G.E., Feb. 2020
+Based on cubetools:
+https://github.com/NicoRicardi/cubetools/blob/master/cubetools.py
+from Niccolò Ricardi
 """
 
 import numpy as np
