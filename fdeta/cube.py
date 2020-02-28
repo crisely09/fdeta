@@ -150,7 +150,7 @@ def make_grid(grid_shape: tuple, vectors: np.ndarray,
     for i in range(3):
         steps = grid_shape[i]
         size = vectors[i, i]
-        axis.append(np.arange(origin[i], steps*size, size))
+        axis.append(np.arange(origin[i], origin[i]+steps*size, size))
 
     xv, yv, zv = np.meshgrid(axis[0], axis[1], axis[2])
     xv = xv.reshape((xv.size,))

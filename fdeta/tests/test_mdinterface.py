@@ -8,6 +8,7 @@ import os
 import numpy as np
 
 from fdeta.analysis import TrajectoryAnalysis
+from fdeta.mdtrajectory import MDTrajectory
 from fdeta.fdetmd.mdinterface import MDInterface
 from fdeta.fdetmd.dft import compute_nad_lda_all
 
@@ -18,8 +19,8 @@ def test_mdinterface_base():
     dic = os.getenv('FDETADATA')
     traj = os.path.join(dic, 'test_traj.xyz')
     box_size = np.array([4, 4, 4])
-    grid_size = np.array([10, 10, 10])
-    ta = TrajectoryAnalysis(traj)
+    grid_size = (10, 10, 10)
+    ta = MDTrajectory(traj)
     mdi = MDInterface(ta, box_size, grid_size)
     mdi.save_grid()
     ref_edges = [np.array([-1.8, -1.4, -1., -0.6, -0.2, 0.2, 0.6, 1., 1.4, 1.8]),
@@ -37,8 +38,8 @@ def test_mdinterface_histogram():
     dic = os.getenv('FDETADATA')
     traj = os.path.join(dic, 'test_traj.xyz')
     box_size = np.array([10, 10, 10])
-    grid_size = np.array([10, 10, 10])
-    ta = TrajectoryAnalysis(traj)
+    grid_size = (10, 10, 10)
+    ta = MDTrajectory(traj)
     mdi = MDInterface(ta, box_size, grid_size)
     mdi.save_grid('second_text.txt')
     assert (mdi.delta == 1.0).all()
@@ -58,8 +59,8 @@ def test_mdinterface_acetone_w2():
     dic = os.getenv('FDETADATA')
     traj = os.path.join(dic, 'traj_acetone_w2.xyz')
     box_size = np.array([10, 10, 10])
-    grid_size = np.array([15, 15, 15])
-    ta = TrajectoryAnalysis(traj)
+    grid_size = (15, 15, 15)
+    ta = MDTrajectory(traj)
     mdi = MDInterface(ta, box_size, grid_size)
     mdi.save_grid()
     gridname = os.path.join(dic, 'grid_vemb_acetone.dat')
