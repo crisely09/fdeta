@@ -221,8 +221,7 @@ class MDInterface:
                         only_values: bool = False):
         """ Create cubefile from data and grid.
         """
-        if only_values:
-
+        # if only_values:
         # Make objects to build cubic grid
         step = grid_values[1, 0] - grid_values[0, 0]
         vectors = np.zeros((3, 3))
@@ -230,7 +229,7 @@ class MDInterface:
         values = np.zeros(grid_values.shape)
         for i in range(3):
             vectors[i, i] = step
-            origin[i] = rho[0, i]
+            origin[i] = grid_values[0, i]
         # Re-order values to right cubefile format
         nx = self.grid_size[0]
         ny = self.grid_size[1]
@@ -240,8 +239,7 @@ class MDInterface:
             for y in range(ny):
                 for z in range(nz):
                     fcount = x + y*ny + z*ny*nz
-                    values[icount] = rho[fcount, 3]
+                    values[icount] = grid_values[fcount, 3]
                     icount += 1
         # cube_grid = make_grid(grid_shape, vectors, origin)
         # np.savetxt("cubic_grid.txt", cube_grid)
-
