@@ -26,7 +26,7 @@ Installation
 
 ### Copyright
 
-Copyright (c) 2019, Cristina E. González-Espinoza
+Copyright (c) 2019, Cristina E. González-Espinoza and Niccolò Ricardi.
 
 #### Acknowledgements
  
