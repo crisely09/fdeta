@@ -12,7 +12,7 @@ import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
 
 from fdeta.fdetmd.mdinterface import MDInterface
-from fdeta.analysis import TrajectoryAnalysis
+from fdeta.mdtrajectory import MDTrajectory
 
 
 def test_interpolation_base():
@@ -42,7 +42,7 @@ def test_interpolate_helium():
     # define ta_object
     dic = os.getenv('FDETADATA')
     filetraj = os.path.join(dic, 'he_traj.txt')
-    traj = TrajectoryAnalysis(filetraj)
+    traj = MDTrajectory(filetraj)
     box_size = np.array([2, 2, 2])
     grid_size = np.array([5, 5, 5])
     # Use the mdinterface to create a cubic grid
