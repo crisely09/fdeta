@@ -17,6 +17,7 @@ else:
 
 rc('text', usetex=True)
 
+
 def plot_distrib(data: np.ndarray, index: int, bins = 36,
                  y_label: str = "dihedral",  #TODO: allow plotting of multiple indexes together
               title: str = "", pos_range: bool = True):
@@ -112,7 +113,7 @@ def str2zmat(xyz_str, c_table, start_index=1):
     tofeed = StringIO(xyz_str)
     mol = cc.Cartesian.read_xyz(tofeed, start_index=start_index)
     zmat = mol.get_zmat(c_table)
-        return zmat
+    return zmat
     
 def get_all_internal_coords(aligned_fn: str, int_coords_file: str = "internal_coordinates.npz", save: bool =True, dec_digits: int = 3):
     """Retrieves all internal coordinates from aligned trajectory in cartesians.
@@ -265,7 +266,8 @@ def detect_rotating_groups(dih_std: np.darray = np.array([]), dih_c_std: np.darr
                 global dih_c_std
                 dih_c = globals()["dih"] % 360
                 dih_c_std = dih_c.std(axis=1)
-            raise IOError("there is no \dih\" array")    
+            except:
+                raise IOError("there is no \"dih\" array")    
     rotate = np.logical_and(abs(dih_c_std - dih_std) < 30, abs(dih_std) > 90)
     print("{} atoms seem to be rotating".format(len(np.arange(60)[rotate])))
     return rotate
@@ -364,8 +366,8 @@ def average_int_coords(aligned_fn: str ="", int_coord_file: str = "", out_file: 
     first_zmat = zmat.copy()
     ###2 Averaging the internal coordinates
     global dih_mean, dih_c, dih_c_mean, dih_std, dih_c_std, use_c #this way the first function setting them fixes them
-    zmat._frame["bonds"] bonds.mean(axis=1) 
-    zmat._frame["angles"] angles.mean(axis=1)
+    zmat._frame["bonds"] == bonds.mean(axis=1) 
+    zmat._frame["angles"] == angles.mean(axis=1)
     if correct_quasilinears == "std":
         correct_quasilinears()
     if detect_rotate == "std":
@@ -383,33 +385,7 @@ def average_int_coords(aligned_fn: str ="", int_coord_file: str = "", out_file: 
         count = 1
         while os.path.exists(out_file):
             out_file = "{}_{}.{}".format(bname,count,ext)
-            count+ = 1
+            count += 1
         carts.to_xyz(out_file)
-    if view = True:
+    if view == True:
         carts.view()
-
-#        files = [i for i in gl.glob(bname+"*."+splt[-1]) i
-        
-        
-     
-         
-#    dihedrals_mean = dih_mean.copy()
-#    dihedrals_mean[use_c] = dih_c_mean[use_c]
-#    # Replace rotating angles with values of the last snapshot
-#    # TODO: Make sure it's not crazy
-#    to_sub = np.array(zmat._frame["dihedral"])[rotate]
-#    dihedrals_mean[rotate] = to_sub
-#    return dihedrals_mean
-
-
-#def efvuv
-#    bonds_mean = bonds.mean(axis=1)
-#    angles_mean = angles.mean(axis=1)
-#    # Find problematic dihedrals and correct them
-#    dihedrals_mean = correct_dihedrals(zmat, dih)
-#    zmat._frame["bond"] = bonds_mean
-#    zmat._frame["angle"] = angles_mean
-#    zmat._frame["dihedral"] = dihedrals_mean
-#    carts = zmat.get_cartesian()
-#    carts.to_xyz(averaged_fn)
-
