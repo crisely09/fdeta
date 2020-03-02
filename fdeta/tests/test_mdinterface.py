@@ -7,7 +7,6 @@ Unit and regression test for the fdeta package.
 import os
 import numpy as np
 
-from fdeta.analysis import TrajectoryAnalysis
 from fdeta.mdtrajectory import MDTrajectory
 from fdeta.fdetmd.mdinterface import MDInterface
 from fdeta.fdetmd.dft import compute_nad_lda_all

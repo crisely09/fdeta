@@ -3,7 +3,6 @@
 import os
 import numpy as np
 
-from fdeta.analysis import TrajectoryAnalysis
 from fdeta.mdtrajectory import MDTrajectory
 from fdeta.fdetmd.mdinterface import MDInterface
 from fdeta.fdetmd.dft import compute_nad_lda_all
@@ -14,7 +13,7 @@ def test():
     box_size = np.array([4, 4, 4])
     grid_size = np.array([10, 10, 10])
     histogram_range = np.asarray([-box_size/2., box_size/2.]).T
-    ta = TrajectoryAnalysis(traj)
+    ta = MDTrajectory(traj)
     ta.select(0)
     ta.align_along_trajectory(0, ta.Topology)
     ta.select(1)
