@@ -14,12 +14,7 @@ def test():
     grid_size = np.array([10, 10, 10])
     histogram_range = np.asarray([-box_size/2., box_size/2.]).T
     ta = MDTrajectory(traj)
-    ta.select(0)
-    ta.align_along_trajectory(0, ta.Topology)
-    ta.select(1)
-    ta.align_along_trajectory(1, ta.Topology)
-    ta.get_average_structure(1)
-    edges, pcf = ta.compute_pair_correlation_function(histogram_range,                                                                      grid_size, 0)
+    edges, pcf = ta.compute_pair_correlation_function(histogram_range, grid_size, 0)
    #self.npoints = np.cumprod(grid_size)[-1]
    #self.delta = sp.diff(edges)
    #edges = np.array(edges)
@@ -51,7 +46,8 @@ def test_pcf():
     box_size = np.array([4, 4, 4])
     grid_size = np.array([10, 10, 10])
     histogram_range = np.asarray([-box_size/2., box_size/2.]).T
-    edges, pcf = ta.compute_pair_correlation_function(histogram_range,                                                                      grid_size, 0)
+    edges, pcf = ta.compute_pair_correlation_function(histogram_range,
+                                                      grid_size, 0)
     pcfO = np.where(pcf["O"] == 1.0)
     assert np.allclose(pcfO, (np.array([1, 8]), np.array([4, 6]), np.array([5, 4])))
 
