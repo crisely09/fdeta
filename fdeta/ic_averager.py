@@ -122,17 +122,75 @@ class ic_averager:
         self.c_table = c_table
         self.zmat = None
         self.cart = None
-        self.natoms = self.dih.shape(0) 
-        self.nframes = self.dih.shape(1)
-        if len(self.bonds)==0:
+        self.natoms = self.dih.shape[0] 
+        self.nframes = self.dih.shape[1]
+        if len(self.bonds.shape)==0:
             self.avg_bond_angles = None  # empty attributes, so no info on averaging
-        elif len(self.bonds)==1:
+        elif len(self.bonds.shape)==1:
             self.avg_bond_angles = True  # bonds and angles are already averaged
-        elif len(self.bonds)==2:
+        elif len(self.bonds.shape)==2:
             self.avg_bond_angles = False # full distribution of bonds and angles
         else:
             raise AttributeError("Wrong shape for bond array")
-       
+#    @classmethod
+#    def from_arrays(cls, atoms: Union[np.ndarray,list], arr: np.ndarray, int_coords_file: str = "internal_coordinates.npz",
+#                               save: bool =True, avg_bond_angles: bool = False, dec_digits: int = 3):
+#        """Retrieves all internal coordinates from aligned trajectory in cartesians.
+#    
+#        Parameters
+#        ----------
+#        aligned_fn : str
+#            Filename of the fragment aligned over all trajectory.
+#        int_coords_file : str
+#            Filename for writing all the internal coordinates. ".npy" and ".npz" can be
+#            detected, otherwise ".txt" separate files are used.
+#        save : bool
+#            whether coordinates should be also saved (True) or just returned (False)
+#        avg_bond_angles: bool
+#            whether bonds and angles should already be averaged (for saving and returning)
+#        dec_digits : int
+#            Used only for ".txt" files, number of decimal digits
+#        """
+#    
+#        t1 = time.time()
+#        nframes, natoms =  arr.shape[:2]
+#        bonds = np.zeros((natoms, nframes))
+#        angles = np.zeros((natoms, nframes))
+#        dih = np.zeros((natoms, nframes))
+#        for f in range(nframes):
+#            cart = 
+#            if f == 0:
+#                c_table = cart.get_construction_table()
+#                zmat = cart.get_zmat(c_table)
+#                zmat1 = zmat.copy()
+#            else:
+#                zmat = cart.get_zmat(c_table)
+#                bonds[:, f] = zmat._frame['bond']
+#                angles[:, f] = zmat._frame['angle']
+#                dih[:, f] = zmat._frame['dihedral']
+#            t2 = time.time()
+#        elapsed = t2 - t1
+#        print("Time to get all internal coordinates: {}".format(elapsed))
+#        if save:
+#            if avg_bond_angles:
+#                bonds = bonds.mean(axis = 1)
+#                angles = angles.mean(axis = 1)
+#            fmt = "{{%.f}}".format(dec_digits)
+#            if int_coords_file[:-4] == ".npy":
+#                np.save(int_coords_file, np.array([bonds, angles, dih]))
+#                print("saved bonds, angles, dihedrals in {}".format(int_coords_file))
+#            elif int_coords_file[:-4] == ".npz":
+#                np.savez(int_coords_file, bonds=bonds, angles=angles, dihedrals=dih)
+#                print("saved bonds, angles, dihedrals in {}".format(int_coords_file))
+#            else:
+#                int_coords_file += ".txt" if "txt" not in int_coords_file else ""
+#                np.savetxt(int_coords_file[:-4] + "_bonds.txt", np.array(bonds), fmt=fmt)
+#                np.savetxt(int_coords_file[:-4] + "_angles.txt", np.array(angles), fmt=fmt)
+#                np.savetxt(int_coords_file[:-4] + "_dihedrals.txt", np.array(dih), fmt=fmt)
+#                print("saved bonds,angles,dihedrals in {} respectively".format(", ".join(
+#                    [int_coords_file[:-4] + i + int_coords_file[-4:] for i in["_bonds", "_angles", "_dihedrals"]])))
+#        return cls(bonds, angles, dih, zmat1, c_table)
+#       
     @classmethod
     def from_aligned_cartesian_file(cls, aligned_fn: str, int_coords_file: str = "internal_coordinates.npz",
                                save: bool =True, avg_bond_angles: bool = False, dec_digits: int = 3):
@@ -296,7 +354,7 @@ class ic_averager:
         if method == "std":
             diff_std = self.dih_c_std - self.dih_std
             self.use_c = np.where(diff_std < 0)  # where it's better to use 0-360 range
-            self.zmat._frame["dihedrals"][self.use_c] = self.dih_c_mean[self.use_c]
+            self.zmat._frame["dihedral"].values[self.use_c] = self.dih_c_mean[self.use_c]
     
     def detect_rotating_groups(self, method: str = "std", diff_std_thresh: Union[float, int] = 30, std_thresh: Union[float, int] = 90):
         """Find the freely rotating dihedrals
@@ -315,6 +373,8 @@ class ic_averager:
         if method == "std":
             self.rotate = np.logical_and(abs(self.dih_c_std - self.dih_std) < diff_std_thresh, abs(self.dih_std) > std_thresh)
             print("{} atoms seem to be rotating".format(len(np.arange(60)[self.rotate])))  #TODO should we print also cartesian numbering?
+            print("array numbering: {}".format(", ".join(list(map(str,np.arange(60)[self.rotate])))))
+            print("Cartesian numbering: {}".format(", ".join(list(map(str,self.zmat._frame.index[self.rotate])))))
     
     def fix_rotate(self, method: str = "pick_first"):
         """Fixes the issue of rotating groups.
@@ -325,10 +385,11 @@ class ic_averager:
                 "pick_first": pick dihedrals for self.rotate from the first frame
         """
         if method == "pick_first":
-            self.zmat._frame["dihedrals"][self.rotate] = self.zmat1._frame["dihedrals"][self.rotate]
+            self.zmat._frame["dihedral"].values[self.rotate] = self.zmat1._frame["dihedral"][self.rotate]
     
     def average_int_coords(self, out_file: str = "averaged.xyz", overwrite: bool = False,
-                           view: bool = True, correct_quasilinears: str = "std",
+                           view: bool = True, viewer: str = "avogadro",
+                           correct_quasilinears: str = "std",
                            detect_rotate: str = "std",
                            fix_rotate: str = "pick_first"):
         """Averages the internal coordinates
@@ -363,18 +424,17 @@ class ic_averager:
         self.zmat = self.zmat1.copy()
         self.zmat._frame["bonds"] == self.bonds if self.avg_bond_angles else self.bonds.mean(axis=1) 
         self.zmat._frame["angles"] == self.angles if self.avg_bond_angles else self.angles.mean(axis=1)
-        self.zmat._frame["dihedrals"] = self.dih_mean
+        self.zmat._frame["dihedral"] = self.dih_mean
         
         if correct_quasilinears != "no":
             self.correct_quasilinears(correct_quasilinears)
         if detect_rotate != "no":
-            self.rotate = self.detect_rotating_groups(detect_rotate)
+            self.detect_rotating_groups(detect_rotate)
             if fix_rotate != "no":
                 self.fix_rotate(fix_rotate)
-#                    dih_mean[rotate] = np.array(first_zmat._frame["dihedrals"])[rotate]
         self.cart = self.zmat.get_cartesian()
         if overwrite or not os.path.exists(out_file):
-            self.carts.to_xyz(out_file)
+            self.cart.to_xyz(out_file)
         else:
             splt = out_file.split(".")
             bname = ".".join(splt[:-1])
@@ -386,7 +446,7 @@ class ic_averager:
                 count += 1
             self.carts.to_xyz(out_file)
         if view == True:
-            self.carts.view()
+            self.cart.view(viewer=viewer)
     
     ### NB all @property are "very" private and do not change. zmat._frame["dihedral"] does        
     @property
@@ -486,8 +546,8 @@ def str2zmat(xyz_str, c_table, start_index=1):
     return zmat
 
 def conv_d(d: int):
-    """Convert angles from (-180, 180) range
-       to (0, 360) range.
+    """Convert angles from (0, 360) range
+       to (-180, 180) range.
 
     Parameters
     ----------
