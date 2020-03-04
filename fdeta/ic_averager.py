@@ -453,7 +453,7 @@ class ic_averager:
     
                 out_file = "{}_{}.{}".format(bname,count,ext)
                 count += 1
-            self.carts.to_xyz(out_file)
+            self.cart.to_xyz(out_file)
         if view == True:
             self.cart.view(viewer=viewer)
     
