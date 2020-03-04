@@ -100,3 +100,11 @@ ENV/
 
 # mypy
 .mypy_cache/
+
+#internal coordinates
+fdeta/*txt
+fdeta/*npy
+fdeta/*npz
+fdeta/dump
+fdeta/dump/*
+

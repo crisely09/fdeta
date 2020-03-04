@@ -178,10 +178,10 @@ class ic_averager:
                 bonds = bonds.mean(axis = 1)
                 angles = angles.mean(axis = 1)
             fmt = "{{%.f}}".format(dec_digits)
-            if int_coords_file[:-4] == ".npy":
+            if int_coords_file[-4:] == ".npy":
                 np.save(int_coords_file, np.array([bonds, angles, dih]))
                 print("saved bonds, angles, dihedrals in {}".format(int_coords_file))
-            elif int_coords_file[:-4] == ".npz":
+            elif int_coords_file[-4:] == ".npz":
                 np.savez(int_coords_file, bonds=bonds, angles=angles, dihedrals=dih)
                 print("saved bonds, angles, dihedrals in {}".format(int_coords_file))
             else:
@@ -194,7 +194,7 @@ class ic_averager:
         return cls(bonds, angles, dih, zmat1, c_table)
 #       
     @classmethod
-    def from_aligned_cartesian_file(cls, aligned_fn: str, int_coords_file: str = "internal_coordinates.npz",
+    def from_aligned_cartesian_file(cls, aligned_fn: str = "aligned0.xyz", int_coords_file: str = "internal_coordinates.npz",
                                save: bool =True, avg_bond_angles: bool = False, dec_digits: int = 3):
         """Retrieves all internal coordinates from aligned trajectory in cartesians.
     
@@ -249,18 +249,21 @@ class ic_averager:
             if avg_bond_angles:
                 bonds = bonds.mean(axis = 1)
                 angles = angles.mean(axis = 1)
-            fmt = "{{%.f}}".format(dec_digits)
-            if int_coords_file[:-4] == ".npy":
+#            fmt = "{{%.f}}".format(dec_digits)
+            if int_coords_file[-4:] == ".npy":
                 np.save(int_coords_file, np.array([bonds, angles, dih]))
                 print("saved bonds, angles, dihedrals in {}".format(int_coords_file))
-            elif int_coords_file[:-4] == ".npz":
+            elif int_coords_file[-4:] == ".npz":
                 np.savez(int_coords_file, bonds=bonds, angles=angles, dihedrals=dih)
                 print("saved bonds, angles, dihedrals in {}".format(int_coords_file))
             else:
                 int_coords_file += ".txt" if "txt" not in int_coords_file else ""
-                np.savetxt(int_coords_file[:-4] + "_bonds.txt", np.array(bonds), fmt=fmt)
-                np.savetxt(int_coords_file[:-4] + "_angles.txt", np.array(angles), fmt=fmt)
-                np.savetxt(int_coords_file[:-4] + "_dihedrals.txt", np.array(dih), fmt=fmt)
+#                np.savetxt(int_coords_file[:-4] + "_bonds.txt", np.array(bonds), fmt=fmt)
+#                np.savetxt(int_coords_file[:-4] + "_angles.txt", np.array(angles), fmt=fmt)
+#                np.savetxt(int_coords_file[:-4] + "_dihedrals.txt", np.array(dih), fmt=fmt)
+                np.savetxt(int_coords_file[:-4] + "_bonds.txt", np.array(bonds))
+                np.savetxt(int_coords_file[:-4] + "_angles.txt", np.array(angles))
+                np.savetxt(int_coords_file[:-4] + "_dihedrals.txt", np.array(dih))
                 print("saved bonds,angles,dihedrals in {} respectively".format(", ".join(
                     [int_coords_file[:-4] + i + int_coords_file[-4:] for i in["_bonds", "_angles", "_dihedrals"]])))
         return cls(bonds, angles, dih, zmat1, c_table)
@@ -278,26 +281,29 @@ class ic_averager:
         """
         # 1.1 Figuring out files present and extensions
         txtfiles = []
+        processed = False
         if int_coord_file == "":
             print("No internal coordinates file specified. trying to figure it out.")
             ic_files = gl.glob("internal_coordinates.*")
             if len(ic_files) == 0:
-                filesfound = [gl.glob("*_+" + i + ".txt") for i in ["bonds", "angles", "dihedrals"]]
+                filesfound = [gl.glob("*_" + i + ".txt") for i in ["bonds", "angles", "dihedrals"]]
                 lenlist = list(map(len, filesfound))
                 if lenlist == [1, 1, 1]:
                     txtfiles = [i[0] for i in filesfound]
+                    print("Using {}".format(", ".join(txtfiles)))
                 elif 0 in lenlist:
                     raise FileNotFoundError("Could not find the internal coordinates.")
                 else:
                     raise FileNotFoundError("many bond,angles,dihedrals files. Specify \"int_coord_file\" or clean up folder.")
             if len(ic_files) == 1:
                 int_coord_file = ic_files[0]
+                print("Using {}".format(int_coord_file))
             if len(ic_files) > 1:
                 int_coord_file = input("There seem to be many internal coordinates files. Type the one to use.")
     
         if int_coord_file[-4:] == ".txt":
             try:
-                txtfiles = [gl.glob(int_coord_file[:-4] + "_+" + i + ".txt")[0] for i in ["bonds", "angles", "dihedrals"]]
+                txtfiles = [gl.glob(int_coord_file[:-4] + "_" + i + ".txt")[0] for i in ["bonds", "angles", "dihedrals"]]
             except BaseException:
                 raise FileNotFoundError(
                         """For *.txt, internal coordinates should be saved as basename_bonds.txt , basename_angles.txt, basename_dihedrals.txt.\n 
@@ -307,6 +313,7 @@ class ic_averager:
             bonds = np.loadtxt(txtfiles[0])
             angles = np.loadtxt(txtfiles[1])
             dih = np.loadtxt(txtfiles[2])
+            processed = True
         elif len(txtfiles) == 0:
             pass
         else:
@@ -318,7 +325,7 @@ class ic_averager:
             bonds, angles, dih = [np.load(int_coord_file)[i] for i in np.load(int_coord_file)]
         elif int_coord_file[-4:] == ".npy":
             bonds, angles, dih = np.load(int_coord_file)
-        else:
+        elif not processed:
             raise FileNotFoundError("Could not figure out the extension of your int_coord_file")
         # 1.2 If int_cord_file was read, reading beginning of aligned_fn for c_table, z_mat
         if aligned_fn == "":
