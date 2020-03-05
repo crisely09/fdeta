@@ -59,6 +59,7 @@ class MDTrajectory:
         elements = []
         self.charges = {}
         self.aligned = {}
+        self.errors = {}
         self.edges = None
         for i, line in enumerate(data):
             if i == 0:
@@ -215,8 +216,8 @@ class MDTrajectory:
         # Translation of structures
         geo -= geo_centroid
         ref_geo -= ref_centroid
-        aligned, rmsd_error = kb.kabsch(geo, ref_geo, output=True)
-        return aligned, rmsd_error
+        aligned, rmatrix, rmsd_error = kb.kabsch(geo, ref_geo, rmsd_only=False)
+        return aligned, rmatrix, geo_centroid, rmsd_error
 
     def align_along_trajectory(self, frag_id: int, trajectory: dict = None,
                                to_file: bool = False):
@@ -238,14 +239,15 @@ class MDTrajectory:
         reference = self.get_structure_from_topology(frag_id, 0, trajectory)
         for iframe in range(self.nframes):
             current = self.get_structure_from_topology(frag_id, iframe, trajectory)
-            aligned, rmsd_error = self.align(current, reference)
-            alignment[iframe] = aligned
+            aligned, rmatrix, centroid, rmsd_error = self.align(current, reference)
+            alignment[iframe] = [aligned, rmatrix, centroid]
             errors[iframe] = rmsd_error
         self.aligned[frag_id] = alignment
+        self.errors[frag_id] = errors
         if to_file:
             self.save_topology(frag_id, geometries=alignment, fname='aligned_')
         else:
-            return alignment, errors
+            return alignment
 
     def get_average_structure(self, frag_id: int, method: str = 'zmat'):
         """ Given a subsystem,  computes its average structure along the trajectory.
@@ -267,7 +269,7 @@ class MDTrajectory:
                                           solute_id=0):
         """ Given the method computes the pair correlation function (pcf)
         for the solvent fragments in 3 steps:
-        a) Get aligned geometries
+        a) Get aligned information of solute (centroids and rotation matrices)
         b) Find elements that belong to the solvent
         c) splitting space by bins and measuring the number of a certain type atoms in each
         Should the pcf be computed only for solute molecule
@@ -290,22 +292,27 @@ class MDTrajectory:
         self.pcf = {}
         coords = []
         clen = 0
-        # Get all aligned structures for solvent fragments
+        # Align all structures for solvent fragments
+        # First get alignment from solute
+        if solute_id in self.aligned:
+            align_info = self.aligned[solute_id]
+        else:
+            align_info = self.align_along_trajectory(solute_id)
         for i, frag_id in enumerate(self.frags):
             if frag_id != solute_id:
-                # Check if it was aligned before
-                if frag_id in self.aligned:
-                    aligned = self.aligned[frag_id]
-                else:
-                    aligned = self.align_along_trajectory(frag_id)[0]
                 if "uniques" in self.topology[frag_id]:
                     elements = self.topology[frag_id]["uniques"]
                 else:
                     elements = self.topology[frag_id]["elements"]
                 elen = len(elements)
                 elements = elements.reshape((elen, 1))
+                xyz_traj = self.topology[frag_id]["geometries"]
                 for iframe in range(self.nframes):
-                    coords.append(np.append(elements, aligned[iframe], axis=1))
+                    # Translate to centroid
+                    xyz = xyz_traj[iframe] - align_info[iframe][2]
+                    # Rotate geometry
+                    np.dot(xyz, align_info[iframe][1], out=xyz)
+                    coords.append(np.append(elements, xyz, axis=1))
                     clen += elen
         # Make array with coordinates
         coords = np.array(coords).reshape((clen, 4))

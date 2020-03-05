@@ -10,17 +10,13 @@ from fdeta.fdetmd.dft import compute_nad_lda_all
 def test():
     dic = os.getenv('FDETADATA')
     traj = os.path.join(dic, 'test_traj.xyz')
-    box_size = np.array([4, 4, 4])
-    grid_size = np.array([10, 10, 10])
+    box_size = np.array([10, 10, 10])
+    grid_size = np.array([8, 8, 8])
     histogram_range = np.asarray([-box_size/2., box_size/2.]).T
     ta = MDTrajectory(traj)
     edges, pcf = ta.compute_pair_correlation_function(histogram_range, grid_size, 0)
-   #self.npoints = np.cumprod(grid_size)[-1]
-   #self.delta = sp.diff(edges)
-   #edges = np.array(edges)
-   ## NOTE: only works for cubic grids
-   #self.points = edges[:, :-1] + self.delta/2.0
-   #self.total_frames = self.ta_object.Total_number_of_frames
+    assert len(np.where(pcf['O'] > 0)[0]) == 4
+    assert len(np.where(pcf['H'] > 0)[0]) == 8
 
 
 def test_base():
@@ -53,5 +49,5 @@ def test_pcf():
 
 if __name__ == "__main__":
     test()
-    test_base()
-    test_pcf()
+#   test_base()
+#   test_pcf()
