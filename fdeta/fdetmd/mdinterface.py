@@ -176,7 +176,6 @@ class MDInterface:
         # Normalize charge with respect to volume element
         rhob[:, 3] *= -1.0
         # np.savetxt('refrhob.txt', rhob)
-        print("rho shape", rhob.shape)
         extgrid = self.interpolate(rhob[:, :3], rhob[:, 3], gridname)
         return extgrid
 
@@ -209,8 +208,8 @@ class MDInterface:
         return interpolated
 
     def compute_electrostatic_potential(self, charge_coeffs: dict,
-                                        fingrid: Union[str, np.ndarray],
-                                        fname: str = 'elst_pot.txt'):
+                                       fingrid: Union[str, np.ndarray],
+                                       fname: str = 'elst_pot.txt'):
         """ Evaluate and save electrostatic potential.
 
         Parameters
@@ -231,30 +230,78 @@ class MDInterface:
         self.pbox.electrostatic_potential(self.npoints, self.total_frames,
                                           fname, charge_density, fingrid)
 
-    def export_cubefile(self, atoms: Union[list, np.ndarray],
-                        coords: np.ndarray, grid_values: np.ndarray,
+    def export_cubefile(self, frag_id, geometry: Union[int, np.ndarray],
+                        values: np.ndarray, is_sorted: bool = False,
                         fname: str = "md_interface.cube"):
-        """ Create cubefile from data and grid.
+        """ Create cubefile from data and internal BoxGrid grid.
+
+        Parameters
+        ----------
+        frag_id : int
+            ID of fragment to use. Defines which atoms to use.
+        geometry: Optional[int, np.ndarray]
+            If int given, the curresponding Frame is taken from the trajectory.
+            If array given, expecting [x, y, z] coordinates in Angstrom.
+        fname : str
+            Name for cubefile.
+
+        Exports
+        -------
+        Cubefile in Gaussian format.
         """
-        # if only_values:
+        atoms = self.ta_object.trajectory[frag_id]['elements']
+        if isinstance(geometry, int):
+            coords = self.ta_object.trajectory[frag_id]['geometries'][geometry]/self.bohr
+        elif isinstance(geometry, np.ndarray):
+            coords = geometry/self.bohr
+        else:
+            raise ValueError("""Geometry must be given as in int to indicate the frame number"""
+                             """or as a np.ndarray (n, 3) with xyz coordinates in Angstrom.""")
         # Make objects to build cubic grid
-        step = grid_values[1, 0] - grid_values[0, 0]
+        grid = np.zeros((len(values), 3))
+        grid = self.pbox.get_grid(corder=False)
+        step = grid[1, 0] - grid[0, 0]
         vectors = np.zeros((3, 3))
         origin = np.zeros((3))
-        values = np.zeros(grid_values.shape)
         for i in range(3):
             vectors[i, i] = step
-            origin[i] = grid_values[0, i]
-        # Re-order values to right cubefile format
-        nx = self.grid_size[0]
-        ny = self.grid_size[1]
-        nz = self.grid_size[2]
+            origin[i] = grid[0, i]
+        if is_sorted is False:
+            values = self.sort_values_cube(self.box_size, values)
+        if '.cube' not in fname:
+            fname = fname+'.cube'
+        write_cube(atoms, coords, origin, vectors, self.box_size, values,
+                   fname)
+
+    @staticmethod
+    def sort_values_cube(box_size: tuple, ref_values: np.ndarray):
+        """Sort values to follow cubefile order.
+
+        Numpy mesh grids and histograms use the inverse order to cubefiles,
+        the fastest variable is x, and the slowest is z.
+
+        Parameters
+        ----------
+        box_size : tuple
+            Amount of points in each coordinate.
+        ref_values : np.ndarray
+            Values in reference (numpy) order.
+
+        Returns
+        -------
+        values :  np.ndarray
+            Re-arranged values, sorted so they match with the cubefile order,
+            z being the fastest variable and x the slowest.
+        """
+        nx = box_size[0]
+        ny = box_size[1]
+        nz = box_size[2]
         icount = 0
+        values = np.zeros(ref_values.shape)
         for x in range(nx):
             for y in range(ny):
                 for z in range(nz):
                     fcount = x + y*ny + z*ny*nz
-                    values[icount] = grid_values[fcount, 3]
+                    values[icount] = ref_values[fcount]
                     icount += 1
-        write_cube(atoms, coords, origin, vectors, (nx, ny, nz), values,
-                   fname)
+        return values
