@@ -10,6 +10,16 @@ from typing import Union
 from fdeta.fdetmd.cgrid_tools import BoxGrid
 from fdeta.mdtrajectory import MDTrajectory
 from fdeta.fdetmd.interpolate import interpolate_function
+from fdeta.cube import write_cube
+
+
+def check_grid(grid):
+    """Check if the grid is from file or it is already an array."""
+    if isinstance(grid, str):
+        grid = np.loadtxt(grid)
+    elif not isinstance(grid, np.ndarray):
+        raise TypeError("Final grid `fingrid` must be str or np.nparray")
+    return grid
 
 
 class MDInterface:
@@ -42,7 +52,8 @@ class MDInterface:
         """
         self.ta_object = ta_object
         histogram_range = np.asarray([-box_size/2., box_size/2.]).T
-        self.ta_object.align_along_trajectory(frag_id, self.ta_object.topology, to_file=True)
+        # Save aligned fragment to file
+        self.ta_object.align_along_trajectory(frag_id, to_file=True)
         if average_solute:
             self.ta_object.get_average_structure(frag_id)
         # Align solvent and find the averaged structure
@@ -171,7 +182,7 @@ class MDInterface:
 
     @staticmethod
     def interpolate(refgrid: np.ndarray, values: np.ndarray,
-                    gridname: str, function='gaussian'):
+                    fingrid: Union[str, np.ndarray], function: str = 'gaussian'):
         """ Interpolate some function to an external grid.
 
         This method assumes that the reference values are
@@ -181,21 +192,25 @@ class MDInterface:
         ----------
         refgrid : np.ndarray((n,3), dtype=float)
             Set of points where function was evaluated.
-        function : np.ndarray(N, dtype=float)
-            Reference function values to create interpolator.
-        gridname : string
+        fingrid : string or numpy ndarray
             File with new set of points for the interpolation.
         function : string
             Name of method for the interpolation. Options are:
             `linear`, `cubic`, `gaussian`.
 
+        Returns
+        -------
+        interpolated : np.ndarray((n, 4)), dtype=float)
+            Array with gridpoints and interpolated values.
+
         """
-        grid = np.loadtxt(gridname)
-        extgrid = interpolate_function(refgrid, values, grid, function)
-        return extgrid
+        fingrid = check_grid(fingrid)
+        interpolated = interpolate_function(refgrid, values, fingrid, function)
+        return interpolated
 
     def compute_electrostatic_potential(self, charge_coeffs: dict,
-                                        gridname: str = 'extragrid.txt'):
+                                        fingrid: Union[str, np.ndarray],
+                                        fname: str = 'elst_pot.txt'):
         """ Evaluate and save electrostatic potential.
 
         Parameters
@@ -209,16 +224,16 @@ class MDInterface:
         net_density += self.get_nuclear_density()
         charge_density = self.pbox.normalize(self.npoints*4, self.total_frames, net_density,
                                              False)
-        extgrid = np.loadtxt(gridname)
+
+        fingrid = check_grid(fingrid)
         # Clean the weights from grid to leave space for the potential
-        extgrid[:, 3] = 0.0
-        oname = 'elects_pot.txt'
+        fingrid[:, 3] = 0.0
         self.pbox.electrostatic_potential(self.npoints, self.total_frames,
-                                          oname, charge_density, extgrid)
+                                          fname, charge_density, fingrid)
 
     def export_cubefile(self, atoms: Union[list, np.ndarray],
                         coords: np.ndarray, grid_values: np.ndarray,
-                        only_values: bool = False):
+                        fname: str = "md_interface.cube"):
         """ Create cubefile from data and grid.
         """
         # if only_values:
@@ -241,5 +256,5 @@ class MDInterface:
                     fcount = x + y*ny + z*ny*nz
                     values[icount] = grid_values[fcount, 3]
                     icount += 1
-        # cube_grid = make_grid(grid_shape, vectors, origin)
-        # np.savetxt("cubic_grid.txt", cube_grid)
+        write_cube(atoms, coords, origin, vectors, (nx, ny, nz), values,
+                   fname)

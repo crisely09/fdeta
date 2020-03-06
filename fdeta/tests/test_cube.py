@@ -3,7 +3,7 @@
 import os
 import numpy as np
 from fdeta.fdetmd.cgrid_tools import BoxGrid
-from fdeta.cube import read_cubefile, make_grid
+from fdeta.cube import read_cubefile, make_cubic_grid
 from fdeta.cube import write_cube
 from qcelemental import periodictable as pt
 
@@ -41,7 +41,7 @@ def test_grid_order():
     vectors = data["vectors"]
     origin = data["origin"]
     charge = data["values"]
-    grid3d = make_grid(grid_shape, vectors, origin)
+    grid3d = make_cubic_grid(grid_shape, vectors, origin)
     axis = []
     for i in range(3):
         steps = grid_shape[i]

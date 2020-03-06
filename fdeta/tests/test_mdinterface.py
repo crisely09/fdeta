@@ -47,7 +47,7 @@ def test_mdinterface_histogram():
     assert np.sum(rho)/2 == -20
     gridname = os.path.join(dic, 'grid_vemb.dat')
     mdi.compute_electrostatic_potential(ccoeffs, gridname)
-    elst = np.loadtxt('elects_pot.txt')
+    elst = np.loadtxt('elst_pot.txt')
     ref_elst = np.loadtxt(os.path.join(dic, 'ElectrostaticADF'))
     np.allclose(elst[:, 3], ref_elst[:, 3])
 
@@ -81,7 +81,7 @@ def test_mdinterface_acetone_w2():
     rhoA = inp[:, 3]
     assert np.all(rhoA >= 0)
     enad, vnad = compute_nad_lda_all(rhoA, rhoB)
-    vemb = np.loadtxt('elects_pot.txt')
+    vemb = np.loadtxt('elst_pot.txt')
     vemb[:, 3] += vnad
     np.savetxt('vemb_pot.txt', vemb)
 
