@@ -260,7 +260,7 @@ class MDTrajectory:
         self.aligned[frag_id] = alignment
         self.errors[frag_id] = errors
         if to_file:
-            self.save_trajectory(frag_id, geometries=geos, fname='aligned_')
+            self.save_trajectory(frag_id, geometries=geos, fname='aligned')
         else:
             return alignment
 

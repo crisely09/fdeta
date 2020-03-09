@@ -31,7 +31,7 @@ class MDInterface:
 
     """
     def __init__(self, ta_object: MDTrajectory,
-                 box_size: tuple, grid_size: np.ndarray,
+                 box_size: np.ndarray, grid_size: tuple,
                  frag_id: int = 0, average_solute: bool = False):
         """ Create a pcf ta_object.
 
@@ -39,9 +39,9 @@ class MDInterface:
         ----------
         ta_object : MDTrajectory
             Object with all information about the MD trajectory
-        box_size : tuple(3)
+        box_size : np.ndarray((Npoints,3), dtype=float)
             Size of cubic grid where to evaluate the PCF
-        grid_size : np.ndarray((Npoints,3), dtype=float)
+        grid_size : tuple(3)
             Number of points in each direction.
         frag_id : int
             Index indicating which molecule(s) to take as solute.

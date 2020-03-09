@@ -23,14 +23,16 @@ def interpolate_function(refgrid: np.ndarray,
     ----------
     refgrid : np.ndarray((n,3), dtype=float)
         Set of points where function was evaluated.
-    function : np.ndarray(N, dtype=float)
-        Reference function values to create interpolator.
     grid : np.ndarray((n, 3), dtype=float)
         Grid where the interpolant will be evalated.
     function : string
         Name of method for the interpolation. Options are:
         `linear`, `cubic`, `gaussian`.
 
+    Returns
+    -------
+    grid : np.ndarray
+        Grid that contains coordinates and interpolated values.
     """
     # Prepare arrays for interpolator
     xs = refgrid[:, 0]
@@ -39,6 +41,51 @@ def interpolate_function(refgrid: np.ndarray,
     interpolator = interpolate.Rbf(xs, ys, zs, values, function=function)
     # Replace values previously stored
     grid[:, 3] = interpolator(grid[:, 0], grid[:, 1], grid[:, 2])
+    return grid
+
+
+def interpolate_function_split(refgrid: np.ndarray,
+                               values: np.ndarray,
+                               grid: np.ndarray, 
+                               function: str='gaussian',
+                               max_memory: int = 2000):
+    """ Interpolate some function to an external grid.
+
+    This function splits the final grid in batches
+    to reduce the memory needed for interpolation.
+
+    Parameters
+    ----------
+    refgrid : np.ndarray((n,3), dtype=float)
+        Set of points where function was evaluated.
+    grid : np.ndarray((n, 3), dtype=float)
+        Grid where the interpolant will be evalated.
+    function : string
+        Name of method for the interpolation. Options are:
+        `linear`, `cubic`, `gaussian`.
+    max_memory :  int
+        The maximum size of cache to use (in MB)
+    Returns
+    -------
+    grid : np.ndarray
+        Grid that contains coordinates and interpolated values.
+    """
+    # Prepare arrays for interpolator
+    xs = refgrid[:, 0]
+    ys = refgrid[:, 1]
+    zs = refgrid[:, 2]
+    interpolator = interpolate.Rbf(xs, ys, zs, values, function=function)
+    # Now split the grid into blocks to be able to use the interpolator
+    # Define an appropriate size for the blocks
+    BLKSIZE = 128
+    npoints = len(grid)
+    ngrids = grid.shape[0]
+    blksize = int(max_memory*1e6/(npoints*8*BLKSIZE))*BLKSIZE
+    blksize = max(BLKSIZE, min(blksize, ngrids, BLKSIZE*1200))
+    for ip0 in range(0, ngrids, blksize):
+        ip1 = min(ngrids, ip0+blksize)
+        coords = grid[ip0:ip1]
+        grid[ip0:ip1, 3] = interpolator(coords[:, 0], coords[:, 1], coords[:, 2])
     return grid
 
 
