@@ -150,66 +150,66 @@ def test_interpolate_helium():
     # print(minmax1)
 
 
-def test_interpolate_split():
-    """Check interpolation for He density."""
-    # Define variables
-    dic = os.getenv('FDETADATA')
-    traj = os.path.join(dic, 'traj_acetone_w2.xyz')
-    box_size = np.array([30, 30, 30])
-    grid_size = (15, 15, 15)
-    ta = MDTrajectory(traj)
-    mdi = MDInterface(ta, box_size, grid_size)
-    ccoeffs = {'O': 1.1, 'H': 0.6}
-    box_size2 = np.array([20, 20, 20])
-    grid_size2 = (15, 15, 15)
-    mdi2 = MDInterface(ta, box_size2, grid_size2)
-    mdi.save_grid()
-    gridname = "box_grid2.txt"
-    mdi2.save_grid(gridname)
-    box = np.loadtxt(gridname)
-    gridn = np.zeros((len(box), 4))
-    gridn[:, :3] = box[:]
-    mdi.compute_electrostatic_potential(ccoeffs, gridn)
-    vemb = np.loadtxt('elst_pot.txt')
+# def test_interpolate_split():
+#   """Check interpolation for He density."""
+#   # Define variables
+#   dic = os.getenv('FDETADATA')
+#   traj = os.path.join(dic, 'traj_acetone_w2.xyz')
+#   box_size = np.array([30, 30, 30])
+#   grid_size = (15, 15, 15)
+#   ta = MDTrajectory(traj)
+#   mdi = MDInterface(ta, box_size, grid_size)
+#   ccoeffs = {'O': 1.1, 'H': 0.6}
+#   box_size2 = np.array([20, 20, 20])
+#   grid_size2 = (15, 15, 15)
+#   mdi2 = MDInterface(ta, box_size2, grid_size2)
+#   mdi.save_grid()
+#   gridname = "box_grid2.txt"
+#   mdi2.save_grid(gridname)
+#   box = np.loadtxt(gridname)
+#   gridn = np.zeros((len(box), 4))
+#   gridn[:, :3] = box[:]
+#   mdi.compute_electrostatic_potential(ccoeffs, gridn)
+#   vemb = np.loadtxt('elst_pot.txt')
 
-    # Use PySCF to evaluate density
-    with open("/home/cris/unige/projects/acetone/fdeta/2water/cc-pvdz-segopt.nwchem", 'r') as bf:
-        basis = bf.read()
-    mol0 = gto.M(atom="""C 0.000000000000 0.00000000000000  0.6391449000000001
-                         C 0.000000000000 1.2830700000000006 -0.15244610000000008
-                         C 0.000000000000 -1.2830700000000006 -0.15244610000000006
-                         H 0.000000000000 2.1441410000000007 0.5110019000000001
-                         H 0.000000000000 -2.1441410000000007 0.5110019000000001
-                         H -0.8765800000000001 1.3168810000000004 -0.8034251000000002
-                         H -0.8765799999999999 -1.3168810000000006 -0.8034251000000002
-                         H 0.8765799999999999 1.3168810000000006 -0.8034251000000002
-                         H 0.8765800000000001 -1.3168810000000004 -0.8034251000000001
-                         O 0.000000000000000 0.0000000000000000 1.8574439000000003""",
-                     basis=basis)
+#   # Use PySCF to evaluate density
+#   with open(os.path.join(dic, "cc-pvdz-segopt.nwchem"), 'r') as bf:
+#       basis = bf.read()
+#   mol0 = gto.M(atom="""C 0.000000000000 0.00000000000000  0.6391449000000001
+#                        C 0.000000000000 1.2830700000000006 -0.15244610000000008
+#                        C 0.000000000000 -1.2830700000000006 -0.15244610000000006
+#                        H 0.000000000000 2.1441410000000007 0.5110019000000001
+#                        H 0.000000000000 -2.1441410000000007 0.5110019000000001
+#                        H -0.8765800000000001 1.3168810000000004 -0.8034251000000002
+#                        H -0.8765799999999999 -1.3168810000000006 -0.8034251000000002
+#                        H 0.8765799999999999 1.3168810000000006 -0.8034251000000002
+#                        H 0.8765800000000001 -1.3168810000000004 -0.8034251000000001
+#                        O 0.000000000000000 0.0000000000000000 1.8574439000000003""",
+#                    basis=basis)
 
-    # Solve HF and get density
-    scfres = scf.RHF(mol0)
-    scfres.conv_tol = 1e-12
-    scfres.kernel()
-    grids = gen_grid.Grids(mol0)
-    grids.build()
-    elst_pyscf = np.zeros((len(grids.weights), 4))
-    elst_pyscf[:, :3] = grids.coords
+#   # Solve HF and get density
+#   scfres = scf.RHF(mol0)
+#   scfres.conv_tol = 1e-12
+#   scfres.kernel()
+#   grids = gen_grid.Grids(mol0)
+#   grids.build()
+#   elst_pyscf = np.zeros((len(grids.weights), 4))
+#   elst_pyscf[:, :3] = grids.coords
 #   elst_pyscf = interpolate_function_split(vemb[:, :3], vemb[:, 3], elst_pyscf,
 #                                           function='inverse')
- #  np.savetxt("interpolated_elst_inverse.txt", elst_pyscf)
-    elst_pyscf_direct = np.zeros(elst_pyscf.shape)
-    elst_pyscf_direct[:, :3] = grids.coords
-    mdi.compute_electrostatic_potential(ccoeffs, elst_pyscf_direct, fname='elst_pot_direct.txt')
-    # Clean other files
-    os.remove('elst_pot.txt')
-    os.remove('aligned_0.xyz')
-    os.remove('box_grid2.txt')
+#   np.savetxt("interpolated_elst_inverse.txt", elst_pyscf)
+#   elst_pyscf_direct = np.zeros(elst_pyscf.shape)
+#   elst_pyscf_direct[:, :3] = grids.coords
+#   mdi.compute_electrostatic_potential(ccoeffs, elst_pyscf_direct, fname='elst_pot_direct.txt')
+#   # Clean other files
+#   os.remove('elst_pot.txt')
+#   os.remove('aligned_0.xyz')
+#   os.remove('box_grid2.txt')
 
 
 def integrate_interpolated():
     # Use PySCF to evaluate density
-    with open("/home/cris/unige/projects/acetone/fdeta/2water/cc-pvdz-segopt.nwchem", 'r') as bf:
+    with open(os.path.join(dic, "cc-pvdz-segopt.nwchem"), 'r') as bf:
         basis = bf.read()
     mol0 = gto.M(atom="""C 0.000000000000 0.00000000000000  0.6391449000000001
                          C 0.000000000000 1.2830700000000006 -0.15244610000000008
@@ -244,9 +244,8 @@ def integrate_interpolated():
     np.savetxt('velst_ipd_inv.txt', vi*0.5, delimiter='\n')
 
 
-
 if __name__ == "__main__":
-#   test_interpolation_base()
-#   test_interpolate_helium()
+    test_interpolation_base()
+    test_interpolate_helium()
 #   test_interpolate_split()
-    integrate_interpolated()
+#   integrate_interpolated()
