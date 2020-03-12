@@ -3,8 +3,10 @@ import os
 import pytest
 import numpy as np
 
-from fdeta.mdft_tools import write_parameters_file, check_length
-from fdeta.mdft_tools import read_parameters_file, check_length
+from fdeta.cube import read_cubefile
+from fdeta.mdft.io_tools import reduce_cube
+from fdeta.mdft.io_tools import write_parameters_file, check_length
+from fdeta.mdft.io_tools import read_parameters_file, check_length
 
 
 def test_check_lengths():
@@ -51,6 +53,31 @@ def test_read_write():
     os.remove('pars.in')
 
 
+def test_reduce_cube():
+    """Test for simple reduce_cube"""
+    with pytest.raises(TypeError):
+        reduce_cube(0, 0)
+    # Read a cubefile
+    dic = os.getenv('FDETADATA')
+    name = 'solvent_charge_density_aroud_acetone.cube'
+    fname = os.path.join(dic, name)
+    tpoints = (13, 13, 13)
+    with pytest.raises(ValueError):
+        reduce_cube(fname, tpoints)
+    tpoints = (20, 20, 20)
+    newgrid, newvalues = reduce_cube(fname, tpoints)
+    assert (newgrid.shape[0] == (80 - 20)**3)
+    assert (newvalues.shape[0] == (80 - 20)**3)
+    # Use cube data
+    data = read_cubefile(fname)
+    newgrid1, newvalues1 = reduce_cube(data, tpoints)
+    assert (newgrid1.shape[0] == (80 - 20)**3)
+    assert (newvalues1.shape[0] == (80 - 20)**3)
+    assert np.allclose(newgrid, newgrid1)
+    assert np.allclose(newvalues, newvalues1)
+
+
 if __name__ == "__main__":
     test_check_lengths()
     test_read_write()
+    test_reduce_cube()

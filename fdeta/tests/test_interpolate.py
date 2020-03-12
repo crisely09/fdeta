@@ -8,16 +8,18 @@ import os
 import math
 import numpy as np
 from scipy.interpolate import Rbf
-import matplotlib.pyplot as plt
-from mpl_toolkits.mplot3d import Axes3D
+# import matplotlib.pyplot as plt
+# from mpl_toolkits.mplot3d import Axes3D
 from pyscf import gto, scf
 from pyscf.dft.numint import eval_ao, eval_rho, eval_mat
 from pyscf.dft import gen_grid
 
 from fdeta.fdetmd.mdinterface import MDInterface
 from fdeta.mdtrajectory import MDTrajectory
-from fdeta.fdetmd.interpolate import interpolate_function
-from fdeta.fdetmd.interpolate import interpolate_function_split
+from fdeta.cube import read_cubefile, make_cubic_grid
+# from fdeta.fdetmd.interpolate import interpolate_function
+# from fdeta.fdetmd.interpolate import interpolate_function_split
+from fdeta.fdetmd.interpolate import interpolate_function_sectors, check_equal
 
 
 def test_interpolation_base():
@@ -34,12 +36,12 @@ def test_interpolation_base():
     z = rbfi(y)
     t = fun(y)
     assert np.allclose(z, t, atol=1e-2)
-  # plt.figure(figsize=(6.5, 4))
-  # plt.plot(x, d, 'o', label='data')
-  # plt.plot(y, t, label='true')
-  # plt.plot(y, z, label='interpolated')
-  # plt.legend()
-  # plt.show()
+#   plt.figure(figsize=(6.5, 4))
+#   plt.plot(x, d, 'o', label='data')
+#   plt.plot(y, t, label='true')
+#   plt.plot(y, z, label='interpolated')
+#   plt.legend()
+#   plt.show()
 
 
 def test_interpolate_helium():
@@ -52,8 +54,6 @@ def test_interpolate_helium():
     grid_size = np.array([5, 5, 5])
     # Use the mdinterface to create a cubic grid
     md = MDInterface(traj, box_size, grid_size)
-  # print("Points: \n", md.points)
-  # print(md.npoints*3)
     grid = np.zeros((md.npoints, 3))
     grid = md.pbox.get_grid(grid, False)
 
@@ -86,13 +86,10 @@ def test_interpolate_helium():
     xs = grid[:, 0]
     ys = grid[:, 1]
     zs = grid[:, 2]
-    # print(rho_all.shape)
 
     grids = gen_grid.Grids(mol0)
     grids.level = 4
     grids.build()
-    # print(rho_all.shape)
-    # print(grids.coords.shape)
 
     xdata = grids.coords[:, 0]
     ydata = grids.coords[:, 1]
@@ -110,14 +107,14 @@ def test_interpolate_helium():
         interpolator = interpolate.Rbf(xs, ys, zs, rho_all, function=function)
         new_rho = interpolator(xdata, ydata, zdata)
         minmax.append([function, min(abs(new_rho - real_rho)), max(abs(new_rho - real_rho))])
-      # fig = plt.figure()
-      # ax = fig.add_subplot(projection='3d')
-      # ax.scatter3D(xdata, ydata, new_rho, c=new_rho, cmap='Greens')
-      # ax.scatter3D(xdata, ydata, real_rho, c=real_rho)
-      # plt.xlim(-1.0,  1.0)
-      # plt.ylim(-1.0, 1.0)
-      # plt.show()
-    # print(minmax)
+   #    fig = plt.figure()
+   #    ax = fig.add_subplot(projection='3d')
+   #    ax.scatter3D(xdata, ydata, new_rho, c=new_rho, cmap='Greens')
+   #    ax.scatter3D(xdata, ydata, real_rho, c=real_rho)
+   #    plt.xlim(-1.0,  1.0)
+   #    plt.ylim(-1.0, 1.0)
+   #    plt.show()
+   #  print(minmax)
     mol1 = gto.M(atom="""He  0.000   0.000   2.500""",
                      basis='sto-3g')
     # Solve HF and get density
@@ -151,60 +148,60 @@ def test_interpolate_helium():
 
 
 # def test_interpolate_split():
-#   """Check interpolation for He density."""
-#   # Define variables
-#   dic = os.getenv('FDETADATA')
-#   traj = os.path.join(dic, 'traj_acetone_w2.xyz')
-#   box_size = np.array([30, 30, 30])
-#   grid_size = (15, 15, 15)
-#   ta = MDTrajectory(traj)
-#   mdi = MDInterface(ta, box_size, grid_size)
-#   ccoeffs = {'O': 1.1, 'H': 0.6}
-#   box_size2 = np.array([20, 20, 20])
-#   grid_size2 = (15, 15, 15)
-#   mdi2 = MDInterface(ta, box_size2, grid_size2)
-#   mdi.save_grid()
-#   gridname = "box_grid2.txt"
-#   mdi2.save_grid(gridname)
-#   box = np.loadtxt(gridname)
-#   gridn = np.zeros((len(box), 4))
-#   gridn[:, :3] = box[:]
-#   mdi.compute_electrostatic_potential(ccoeffs, gridn)
-#   vemb = np.loadtxt('elst_pot.txt')
+#    """Check interpolation for He density."""
+#    # Define variables
+#    dic = os.getenv('FDETADATA')
+#    traj = os.path.join(dic, 'traj_acetone_w2.xyz')
+#    box_size = np.array([30, 30, 30])
+#    grid_size = (15, 15, 15)
+#    ta = MDTrajectory(traj)
+#    mdi = MDInterface(ta, box_size, grid_size)
+#    ccoeffs = {'O': 1.1, 'H': 0.6}
+#    box_size2 = np.array([20, 20, 20])
+#    grid_size2 = (15, 15, 15)
+#    mdi2 = MDInterface(ta, box_size2, grid_size2)
+#    mdi.save_grid()
+#    gridname = "box_grid2.txt"
+#    mdi2.save_grid(gridname)
+#    box = np.loadtxt(gridname)
+#    gridn = np.zeros((len(box), 4))
+#    gridn[:, :3] = box[:]
+#    mdi.compute_electrostatic_potential(ccoeffs, gridn)
+#    vemb = np.loadtxt('elst_pot.txt')
 
-#   # Use PySCF to evaluate density
-#   with open(os.path.join(dic, "cc-pvdz-segopt.nwchem"), 'r') as bf:
-#       basis = bf.read()
-#   mol0 = gto.M(atom="""C 0.000000000000 0.00000000000000  0.6391449000000001
-#                        C 0.000000000000 1.2830700000000006 -0.15244610000000008
-#                        C 0.000000000000 -1.2830700000000006 -0.15244610000000006
-#                        H 0.000000000000 2.1441410000000007 0.5110019000000001
-#                        H 0.000000000000 -2.1441410000000007 0.5110019000000001
-#                        H -0.8765800000000001 1.3168810000000004 -0.8034251000000002
-#                        H -0.8765799999999999 -1.3168810000000006 -0.8034251000000002
-#                        H 0.8765799999999999 1.3168810000000006 -0.8034251000000002
-#                        H 0.8765800000000001 -1.3168810000000004 -0.8034251000000001
-#                        O 0.000000000000000 0.0000000000000000 1.8574439000000003""",
-#                    basis=basis)
+#    # Use PySCF to evaluate density
+#    with open(os.path.join(dic, "cc-pvdz-segopt.nwchem"), 'r') as bf:
+#        basis = bf.read()
+#    mol0 = gto.M(atom="""C 0.000000000000 0.00000000000000  0.6391449000000001
+#                         C 0.000000000000 1.2830700000000006 -0.15244610000000008
+#                         C 0.000000000000 -1.2830700000000006 -0.15244610000000006
+#                         H 0.000000000000 2.1441410000000007 0.5110019000000001
+#                         H 0.000000000000 -2.1441410000000007 0.5110019000000001
+#                         H -0.8765800000000001 1.3168810000000004 -0.8034251000000002
+#                         H -0.8765799999999999 -1.3168810000000006 -0.8034251000000002
+#                         H 0.8765799999999999 1.3168810000000006 -0.8034251000000002
+#                         H 0.8765800000000001 -1.3168810000000004 -0.8034251000000001
+#                         O 0.000000000000000 0.0000000000000000 1.8574439000000003""",
+#                     basis=basis)
 
-#   # Solve HF and get density
-#   scfres = scf.RHF(mol0)
-#   scfres.conv_tol = 1e-12
-#   scfres.kernel()
-#   grids = gen_grid.Grids(mol0)
-#   grids.build()
-#   elst_pyscf = np.zeros((len(grids.weights), 4))
-#   elst_pyscf[:, :3] = grids.coords
-#   elst_pyscf = interpolate_function_split(vemb[:, :3], vemb[:, 3], elst_pyscf,
-#                                           function='inverse')
-#   np.savetxt("interpolated_elst_inverse.txt", elst_pyscf)
-#   elst_pyscf_direct = np.zeros(elst_pyscf.shape)
-#   elst_pyscf_direct[:, :3] = grids.coords
-#   mdi.compute_electrostatic_potential(ccoeffs, elst_pyscf_direct, fname='elst_pot_direct.txt')
-#   # Clean other files
-#   os.remove('elst_pot.txt')
-#   os.remove('aligned_0.xyz')
-#   os.remove('box_grid2.txt')
+#    # Solve HF and get density
+#    scfres = scf.RHF(mol0)
+#    scfres.conv_tol = 1e-12
+#    scfres.kernel()
+#    grids = gen_grid.Grids(mol0)
+#    grids.build()
+#    elst_pyscf = np.zeros((len(grids.weights), 4))
+#    elst_pyscf[:, :3] = grids.coords
+#    elst_pyscf = interpolate_function_split(vemb[:, :3], vemb[:, 3], elst_pyscf,
+#                                            function='inverse')
+#    np.savetxt("interpolated_elst_inverse.txt", elst_pyscf)
+#    elst_pyscf_direct = np.zeros(elst_pyscf.shape)
+#    elst_pyscf_direct[:, :3] = grids.coords
+#    mdi.compute_electrostatic_potential(ccoeffs, elst_pyscf_direct, fname='elst_pot_direct.txt')
+#    # Clean other files
+#    os.remove('elst_pot.txt')
+#    os.remove('aligned_0.xyz')
+#    os.remove('box_grid2.txt')
 
 
 def integrate_interpolated():
@@ -244,8 +241,46 @@ def integrate_interpolated():
     np.savetxt('velst_ipd_inv.txt', vi*0.5, delimiter='\n')
 
 
+def test_check_equal():
+    """Test function to check all elements are equal."""
+    assert check_equal([0, 1, 1]) is False
+    assert check_equal((0, 1, 3)) is False
+    assert check_equal([1, 1, 1])
+    assert check_equal((1, 1, 1))
+
+
+def test_interpolate_sectors():
+    """Test interpolation by sectors."""
+    dic = os.getenv('FDETADATA')
+    fname = os.path.join(dic, 'solvent_charge_density_aroud_acetone.cube')
+    data = read_cubefile(fname)
+
+    # Use PySCF to build integration grid
+    with open(os.path.join(dic, "cc-pvdz-segopt.nwchem"), 'r') as bf:
+        basis = bf.read()
+    mol0 = gto.M(atom=""" C  18.897259890000001        18.897259890000001        20.122001870818632
+                          C  18.897259890000001        21.342678305349047        18.606667104832351
+                          C  18.897259890000001        16.451841474650951        18.606667104832351
+                          H  18.897259890000001        22.979467490881472        19.881635444316533
+                          H  18.897259890000001        14.815052289118526        19.881635444316533
+                          H  17.226736906127396        21.435038293242048        17.360146358157202
+                          H  17.226736906127396        16.359481486757954        17.360146358157202
+                          H  20.567782873872606        21.435038293242048        17.360146358157202
+                          H  20.567782873872606        16.359481486757954        17.360146358157202
+                          O  18.897259890000001        18.897259890000001        22.433406498254808""",
+                     basis=basis, unit="Bohr")
+    grids = gen_grid.Grids(mol0)
+    grids.build()
+    intgrid = np.zeros((len(grids.coords), 4))
+    intgrid[:, :3] = grids.coords
+    cubicgrid = make_cubic_grid(data['grid_shape'], data['vectors'], data['origin'])
+    new_grid = interpolate_function_sectors(data, intgrid)
+
+
 if __name__ == "__main__":
     test_interpolation_base()
     test_interpolate_helium()
 #   test_interpolate_split()
 #   integrate_interpolated()
+    test_check_equal()
+    test_interpolate_sectors()

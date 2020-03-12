@@ -5,8 +5,10 @@ Tools for connectivity with Molecular-DFT.
 
 """
 
+import random
 import numpy as np
 from typing import Union, List
+from fdeta.cube import read_cubefile, make_cubic_grid
 from qcelemental import periodictable
 
 
@@ -162,3 +164,81 @@ def write_parameters_file(elements: Union[List, np.ndarray],
         outfile.write("%d  %d\n" % (natoms, nuniques))
         outfile.write(header)
         outfile.write(out)
+
+
+def reduce_cube(cube: Union[str, dict], reduce_points: tuple):
+    """ Reduce size of cube data.
+
+    Take off a certain amount of points in each direction
+    to make a smaller grid.
+
+    Parameters
+    ----------
+    cube : str or dict
+        Cubefile data, either the name of a cubefile
+        or the processed data in a dictionary.
+    reduce_points : tuple (Nx, Ny, Nz)
+        Amount of points to take off in each direction,
+        it means that the grid will be reduced by
+        Nx*Ny*Nz points.
+
+    Returns
+    -------
+    New set of data with the reduced grid information.
+    grid : np.ndarray((npoints, 3))
+        New grid coordinates.
+    values : np.ndarray((npoints))
+        Values on new coordinates.
+    """
+    if isinstance(cube, str):
+        inpcube = read_cubefile(cube)
+    elif isinstance(cube, dict):
+        inpcube = cube
+    else:
+        raise TypeError("`cube` should be given as either a str or a dict.")
+    # Make a mask evenly splitting the number of points
+    # to be taken away in each direction
+    grid_shape = inpcube['grid_shape']
+    print("Initial grid shape : ", grid_shape)
+    x = np.ones(grid_shape[0], dtype=bool)
+    y = np.ones(grid_shape[1], dtype=bool)
+    z = np.ones(grid_shape[2], dtype=bool)
+    ms = [x, y, z]  # list to store masks
+    for i in range(3):
+        # Check that reduce_points makes sense
+        if reduce_points[i] > (grid_shape[i] + 1):
+            raise ValueError("Axis %d reduced points are more than grid points." % i)
+        else:
+            div = grid_shape[i] // reduce_points[i]
+            res = grid_shape[i] % reduce_points[i]
+            if res == 0:
+                # The division can be done immediatly
+                ms[i][np.arange(0, grid_shape[i], div)] = False
+            else:
+                raise ValueError("Please use a divisor of the total number of points.")
+    # From the mask create mesh mask
+    mx, my, mz = np.meshgrid(ms[0], ms[1], ms[2])
+    mx = mx.reshape((mx.size,))
+    my = my.reshape((my.size,))
+    mz = mz.reshape((mz.size,))
+    mask = [all(point) for point in list(zip(my, mx, mz))]  # Order of cubefile
+    # Make cubic grid
+    regrid = make_cubic_grid(grid_shape, inpcube['vectors'], inpcube['origin'])
+    grid = regrid[mask]
+    values = inpcube['values'][mask]
+    return grid, values
+
+
+def gcd(x, y):
+    """Find greatest common divisor."""
+    while y != 0:
+        (x, y) = (y, x % y)
+    return x
+
+
+def smallest_divisor(x):
+    """Find Smallest divisor."""
+    d = 2
+    while (x % d) == 0:
+        d += 1
+    return d
