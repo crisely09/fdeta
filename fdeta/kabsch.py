@@ -40,7 +40,7 @@ def fit(P, Q):
     return rmsd_best
 
 
-def kabsch(P, Q, output=False):
+def kabsch(P, Q, rmsd_only=False):
     """ The Kabsch algorithm
 
     http://en.wikipedia.org/wiki/Kabsch_algorithm
@@ -85,10 +85,11 @@ def kabsch(P, Q, output=False):
     # Rotate P
     P = numpy.dot(P, U)
 
-    if output:
-        return P, rmsd(P, Q)
+    if rmsd_only:
+        return rmsd(P, Q)
+    else:
+        return P, U, rmsd(P, Q)
 
-    return rmsd(P, Q)
 
 
 def centroid(X):
@@ -226,7 +227,7 @@ The script will return three RMSD values;
 
     if output:
 
-        V, r = kabsch(P, Q, output=True)
+        V, U, r = kabsch(P, Q, output=True)
         V += Qc
         write_coordinates(atomsP, V)
 

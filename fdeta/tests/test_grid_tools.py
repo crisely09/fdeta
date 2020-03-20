@@ -26,4 +26,3 @@ def test_simplify_cubic_grid():
     assert_raises(TypeError, simplify_cubic_grid, cubic, var_wrong_type, frames)
     assert_raises(NotImplementedError, simplify_cubic_grid, cubic, var_wrong_shape, frames)
     assert_raises(TypeError, simplify_cubic_grid, cubic, var, frames_wrong)
-    # assert np.allclose(pade._x, [0., 1.2, 3.5, 4.7, 7.0, 9.0], rtol=1e-4)

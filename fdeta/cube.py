@@ -127,8 +127,8 @@ def write_cube(atoms: np.ndarray, coords: np.ndarray,
                 output.write("{:12.6e} ".format(value))
 
 
-def make_grid(grid_shape: tuple, vectors: np.ndarray,
-              origin: np.ndarray):
+def make_cubic_grid(grid_shape: tuple, vectors: np.ndarray,
+                    origin: np.ndarray):
     """Make 3D grid from cube specifications.
 
     Parameters

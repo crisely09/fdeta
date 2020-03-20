@@ -32,13 +32,13 @@ class MDTrajectory:
             Total number of frames in trajectory.
         nfrags : int
             Number of fragments present in trajectory.
-        topology : dictionary
+        trajectory : dictionary
             {frag_id: {geometries:3D ndarray, elements: ndarray(str), uniques: ndarray(str)}}
 
     """
     def __init__(self, traj_file: str, charges_file: str = None):
         """
-        Read trajectory and topology from the files 'name' and 'topology'.
+        Read trajectory and trajectory from the files 'name' and 'trajectory'.
 
         Parameters
         ----------
@@ -59,6 +59,7 @@ class MDTrajectory:
         elements = []
         self.charges = {}
         self.aligned = {}
+        self.errors = {}
         self.edges = None
         for i, line in enumerate(data):
             if i == 0:
@@ -85,16 +86,16 @@ class MDTrajectory:
         self.frags = frags
         self.nfrags = len(frags)
 
-        # Save the information in the topology dictionary
+        # Save the information in the trajectory dictionary
         self.elements = elements
         elements = np.array(elements, dtype=str)
-        self.topology = {}
+        self.trajectory = {}
         for frag_id in frags:
             index = np.where(self.frames[:, :, 3] == frag_id)  # All indices of subsystem
             natom_frag = len(index[1])//self.nframes
             fragment = np.reshape(self.frames[index],
                                   (self.nframes, natom_frag, 4))
-            self.topology[frag_id] = dict(geometries=fragment[:, :, :3],
+            self.trajectory[frag_id] = dict(geometries=fragment[:, :, :3],
                                           elements=elements[index[1][:natom_frag]])
 
         # Save charges of all elements in the system
@@ -139,14 +140,14 @@ class MDTrajectory:
                     uniques.append(nelement)
         self.elements = uniques
         uniques = np.array(uniques, dtype=str)
-        # Now save topology with the right types of atoms
+        # Now save trajectory with the right types of atoms
         for frag_id in self.frags:
             index = np.where(self.frames[:, :, 3] == frag_id)
-            self.topology[frag_id]['uniques'] = uniques[index[0]]
+            self.trajectory[frag_id]['uniques'] = uniques[index[0]]
 
-    def get_structure_from_topology(self, frag_id: int = None,
+    def get_structure_from_trajectory(self, frag_id: int = None,
                                     iframe: int = None,
-                                    topology: dict = None):
+                                    trajectory: dict = None):
         """
         Given frame number and frag_id returns the ndarray of XYZ coordinates.
 
@@ -156,31 +157,31 @@ class MDTrajectory:
             Molecular ID number
         iframe : int
             Frame number
-        topology : dict
-            Input topology
+        trajectory : dict
+            Input trajectory
 
         Returns
         ----------
-        topology[frag_id][0][iframe] : ndarray
+        trajectory[frag_id][0][iframe] : ndarray
 
         """
 
-        if None not in (frag_id, iframe, topology):
-            return topology[frag_id]['geometries'][iframe]
+        if None not in (frag_id, iframe, trajectory):
+            return trajectory[frag_id]['geometries'][iframe]
         else:
             print("Parameters are not specified correctly!")
 
-    def save_topology(self, frag_id, frames: list = None,
+    def save_trajectory(self, frag_id, frames: list = None,
                       geometries: np.ndarray = None,
-                      fname: str = 'topology_'):
-        """ Save the topology for a given fragment.
+                      fname: str = 'trajectory'):
+        """ Save the trajectory for a given fragment.
 
         Parameters
         ----------
         frag_id : int
             ID of fragment to use.
         geometries : dict(np.ndarray((nelements, 3)))
-            Geometries of the fragment along topology.
+            Geometries of the fragment along trajectory.
             If not given, the initial geometries are used.
         fname : str
             Name for the output file.
@@ -188,20 +189,33 @@ class MDTrajectory:
         """
         if frames is None:
             frames = range(self.nframes)
-        atoms = self.topology[frag_id]['elements']
+        atoms = self.trajectory[frag_id]['elements']
         natoms = len(atoms)
         # Getting Elements from Topology and XYZ from outside
-        with open(fname+str(frag_id)+'.txt', 'w') as fout:
+        with open(fname+"_"+str(frag_id)+'.xyz', 'w') as fout:
             for iframe in frames:
                 fout.write(str(natoms)+'\n')
                 fout.write(str('Frame '+str(iframe)+'\n'))
                 if geometries is None:
-                    coords = self.get_structure_from_topology(frag_id, iframe, self.topology)
+                    coords = self.get_structure_from_trajectory(frag_id, iframe, self.trajectory)
                 else:
                     coords = geometries[iframe]
                 for iline in range(natoms):
                     line = ' '.join(coords[iline].astype(str))
                     fout.write(str(atoms[iline])+' '+line+' '+str(frag_id)+'\n')
+
+    @staticmethod
+    def save_snapshot(frag_id: int, iframe: int, elements: np.ndarray,
+                      geometry: np.ndarray, basename: str='snapshot'):
+        """Save the geometry of a fragment for one single snapshot."""
+        print("saving_snapshot")
+        natoms = len(elements)
+        with open(basename+"_"+str(frag_id)+'.xyz', 'w') as fout:
+            fout.write(str(natoms)+'\n')
+            fout.write(str('Frame '+str(iframe)+'\n'))
+            for iline in range(natoms):
+                line = ' '.join(geometry[iline].astype(str))
+                fout.write(str(elements[iline])+' '+line+' '+str(frag_id)+'\n')
 
     @staticmethod
     def align(current: np.ndarray, reference: np.ndarray):
@@ -215,8 +229,8 @@ class MDTrajectory:
         # Translation of structures
         geo -= geo_centroid
         ref_geo -= ref_centroid
-        aligned, rmsd_error = kb.kabsch(geo, ref_geo, output=True)
-        return aligned, rmsd_error
+        aligned, rmatrix, rmsd_error = kb.kabsch(geo, ref_geo, rmsd_only=False)
+        return aligned, rmatrix, geo_centroid, rmsd_error
 
     def align_along_trajectory(self, frag_id: int, trajectory: dict = None,
                                to_file: bool = False):
@@ -231,21 +245,24 @@ class MDTrajectory:
 
         """
         if trajectory is None:
-            trajectory = self.topology
+            trajectory = self.trajectory
         alignment = {}
         errors = {}
+        geos = {}
         # Given frag_id, the reference structure is taken from the first frame.
-        reference = self.get_structure_from_topology(frag_id, 0, trajectory)
+        reference = self.get_structure_from_trajectory(frag_id, 0, trajectory)
         for iframe in range(self.nframes):
-            current = self.get_structure_from_topology(frag_id, iframe, trajectory)
-            aligned, rmsd_error = self.align(current, reference)
-            alignment[iframe] = aligned
+            current = self.get_structure_from_trajectory(frag_id, iframe, trajectory)
+            aligned, rmatrix, centroid, rmsd_error = self.align(current, reference)
+            alignment[iframe] = [aligned, rmatrix, centroid]
             errors[iframe] = rmsd_error
+            geos[iframe] = aligned
         self.aligned[frag_id] = alignment
+        self.errors[frag_id] = errors
         if to_file:
-            self.save_topology(frag_id, geometries=alignment, fname='aligned_')
+            self.save_trajectory(frag_id, geometries=geos, fname='aligned')
         else:
-            return alignment, errors
+            return alignment
 
     def get_average_structure(self, frag_id: int, method: str = 'zmat'):
         """ Given a subsystem,  computes its average structure along the trajectory.
@@ -258,16 +275,26 @@ class MDTrajectory:
             Method to use to average. Options are: `coords`, `zmat`.
 
         """
-        if method == 'coordinates':
-            for iframe in range(self.Total_number_of_frames):
-                self.structure_averaged = np.mean(np.array(list(self.alignement.values()))[:, 0], axis=0)
-            self.save(frag_id, self.structure_averaged)
+        if method not in ['coords', 'zmat']:
+            raise ValueError("Valid values for `method` are: `coords` or `zmat`.")
+        if frag_id in self.aligned:
+            align_info = self.aligned[frag_id]
+        else:
+            align_info = self.align_along_trajectory(frag_id)
+        geos = []
+        if method == 'coords':
+            for iframe in range(self.nframes):
+                geos.append(align_info[iframe][0])
+            geos = np.array(geos)
+            structure_averaged = np.mean(geos, axis=0)
+            elements = self.trajectory[frag_id]['elements']
+            self.save_snapshot(frag_id, 0, elements, structure_averaged)
 
     def compute_pair_correlation_function(self, box_range: tuple, bins: Union[list, np.ndarray],
                                           solute_id=0):
         """ Given the method computes the pair correlation function (pcf)
         for the solvent fragments in 3 steps:
-        a) Get aligned geometries
+        a) Get aligned information of solute (centroids and rotation matrices)
         b) Find elements that belong to the solvent
         c) splitting space by bins and measuring the number of a certain type atoms in each
         Should the pcf be computed only for solute molecule
@@ -290,22 +317,27 @@ class MDTrajectory:
         self.pcf = {}
         coords = []
         clen = 0
-        # Get all aligned structures for solvent fragments
+        # Align all structures for solvent fragments
+        # First get alignment from solute
+        if solute_id in self.aligned:
+            align_info = self.aligned[solute_id]
+        else:
+            align_info = self.align_along_trajectory(solute_id)
         for i, frag_id in enumerate(self.frags):
             if frag_id != solute_id:
-                # Check if it was aligned before
-                if frag_id in self.aligned:
-                    aligned = self.aligned[frag_id]
+                if "uniques" in self.trajectory[frag_id]:
+                    elements = self.trajectory[frag_id]["uniques"]
                 else:
-                    aligned = self.align_along_trajectory(frag_id)[0]
-                if "uniques" in self.topology[frag_id]:
-                    elements = self.topology[frag_id]["uniques"]
-                else:
-                    elements = self.topology[frag_id]["elements"]
+                    elements = self.trajectory[frag_id]["elements"]
                 elen = len(elements)
                 elements = elements.reshape((elen, 1))
+                xyz_traj = self.trajectory[frag_id]["geometries"]
                 for iframe in range(self.nframes):
-                    coords.append(np.append(elements, aligned[iframe], axis=1))
+                    # Translate to centroid
+                    xyz = xyz_traj[iframe] - align_info[iframe][2]
+                    # Rotate geometry
+                    np.dot(xyz, align_info[iframe][1], out=xyz)
+                    coords.append(np.append(elements, xyz, axis=1))
                     clen += elen
         # Make array with coordinates
         coords = np.array(coords).reshape((clen, 4))

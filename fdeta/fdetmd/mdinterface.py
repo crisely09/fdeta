@@ -10,6 +10,16 @@ from typing import Union
 from fdeta.fdetmd.cgrid_tools import BoxGrid
 from fdeta.mdtrajectory import MDTrajectory
 from fdeta.fdetmd.interpolate import interpolate_function
+from fdeta.cube import write_cube
+
+
+def check_grid(grid):
+    """Check if the grid is from file or it is already an array."""
+    if isinstance(grid, str):
+        grid = np.loadtxt(grid)
+    elif not isinstance(grid, np.ndarray):
+        raise TypeError("Final grid `fingrid` must be str or np.nparray")
+    return grid
 
 
 class MDInterface:
@@ -21,7 +31,7 @@ class MDInterface:
 
     """
     def __init__(self, ta_object: MDTrajectory,
-                 box_size: tuple, grid_size: np.ndarray,
+                 box_size: np.ndarray, grid_size: tuple,
                  frag_id: int = 0, average_solute: bool = False):
         """ Create a pcf ta_object.
 
@@ -29,9 +39,9 @@ class MDInterface:
         ----------
         ta_object : MDTrajectory
             Object with all information about the MD trajectory
-        box_size : tuple(3)
+        box_size : np.ndarray((Npoints,3), dtype=float)
             Size of cubic grid where to evaluate the PCF
-        grid_size : np.ndarray((Npoints,3), dtype=float)
+        grid_size : tuple(3)
             Number of points in each direction.
         frag_id : int
             Index indicating which molecule(s) to take as solute.
@@ -42,7 +52,8 @@ class MDInterface:
         """
         self.ta_object = ta_object
         histogram_range = np.asarray([-box_size/2., box_size/2.]).T
-        self.ta_object.align_along_trajectory(frag_id, self.ta_object.topology, to_file=True)
+        # Save aligned fragment to file
+        self.ta_object.align_along_trajectory(frag_id, to_file=True)
         if average_solute:
             self.ta_object.get_average_structure(frag_id)
         # Align solvent and find the averaged structure
@@ -165,13 +176,12 @@ class MDInterface:
         # Normalize charge with respect to volume element
         rhob[:, 3] *= -1.0
         # np.savetxt('refrhob.txt', rhob)
-        print("rho shape", rhob.shape)
         extgrid = self.interpolate(rhob[:, :3], rhob[:, 3], gridname)
         return extgrid
 
     @staticmethod
     def interpolate(refgrid: np.ndarray, values: np.ndarray,
-                    gridname: str, function='gaussian'):
+                    fingrid: Union[str, np.ndarray], function: str = 'gaussian'):
         """ Interpolate some function to an external grid.
 
         This method assumes that the reference values are
@@ -181,21 +191,25 @@ class MDInterface:
         ----------
         refgrid : np.ndarray((n,3), dtype=float)
             Set of points where function was evaluated.
-        function : np.ndarray(N, dtype=float)
-            Reference function values to create interpolator.
-        gridname : string
+        fingrid : string or numpy ndarray
             File with new set of points for the interpolation.
         function : string
             Name of method for the interpolation. Options are:
             `linear`, `cubic`, `gaussian`.
 
+        Returns
+        -------
+        interpolated : np.ndarray((n, 4)), dtype=float)
+            Array with gridpoints and interpolated values.
+
         """
-        grid = np.loadtxt(gridname)
-        extgrid = interpolate_function(refgrid, values, grid, function)
-        return extgrid
+        fingrid = check_grid(fingrid)
+        interpolated = interpolate_function(refgrid, values, fingrid, function)
+        return interpolated
 
     def compute_electrostatic_potential(self, charge_coeffs: dict,
-                                        gridname: str = 'extragrid.txt'):
+                                       fingrid: Union[str, np.ndarray],
+                                       fname: str = 'elst_pot.txt'):
         """ Evaluate and save electrostatic potential.
 
         Parameters
@@ -209,37 +223,85 @@ class MDInterface:
         net_density += self.get_nuclear_density()
         charge_density = self.pbox.normalize(self.npoints*4, self.total_frames, net_density,
                                              False)
-        extgrid = np.loadtxt(gridname)
-        # Clean the weights from grid to leave space for the potential
-        extgrid[:, 3] = 0.0
-        oname = 'elects_pot.txt'
-        self.pbox.electrostatic_potential(self.npoints, self.total_frames,
-                                          oname, charge_density, extgrid)
 
-    def export_cubefile(self, atoms: Union[list, np.ndarray],
-                        coords: np.ndarray, grid_values: np.ndarray,
-                        only_values: bool = False):
-        """ Create cubefile from data and grid.
+        fingrid = check_grid(fingrid)
+        # Clean the weights from grid to leave space for the potential
+        fingrid[:, 3] = 0.0
+        self.pbox.electrostatic_potential(self.npoints, self.total_frames,
+                                          fname, charge_density, fingrid)
+
+    def export_cubefile(self, frag_id, geometry: Union[int, np.ndarray],
+                        values: np.ndarray, is_sorted: bool = False,
+                        fname: str = "md_interface.cube"):
+        """ Create cubefile from data and internal BoxGrid grid.
+
+        Parameters
+        ----------
+        frag_id : int
+            ID of fragment to use. Defines which atoms to use.
+        geometry: Optional[int, np.ndarray]
+            If int given, the curresponding Frame is taken from the trajectory.
+            If array given, expecting [x, y, z] coordinates in Angstrom.
+        fname : str
+            Name for cubefile.
+
+        Exports
+        -------
+        Cubefile in Gaussian format.
         """
-        # if only_values:
+        atoms = self.ta_object.trajectory[frag_id]['elements']
+        if isinstance(geometry, int):
+            coords = self.ta_object.trajectory[frag_id]['geometries'][geometry]/self.bohr
+        elif isinstance(geometry, np.ndarray):
+            coords = geometry/self.bohr
+        else:
+            raise ValueError("""Geometry must be given as in int to indicate the frame number"""
+                             """or as a np.ndarray (n, 3) with xyz coordinates in Angstrom.""")
         # Make objects to build cubic grid
-        step = grid_values[1, 0] - grid_values[0, 0]
+        grid = np.zeros((len(values), 3))
+        grid = self.pbox.get_grid(corder=False)
+        step = grid[1, 0] - grid[0, 0]
         vectors = np.zeros((3, 3))
         origin = np.zeros((3))
-        values = np.zeros(grid_values.shape)
         for i in range(3):
             vectors[i, i] = step
-            origin[i] = grid_values[0, i]
-        # Re-order values to right cubefile format
-        nx = self.grid_size[0]
-        ny = self.grid_size[1]
-        nz = self.grid_size[2]
+            origin[i] = grid[0, i]
+        if is_sorted is False:
+            values = self.sort_values_cube(self.box_size, values)
+        if '.cube' not in fname:
+            fname = fname+'.cube'
+        write_cube(atoms, coords, origin, vectors, self.box_size, values,
+                   fname)
+
+    @staticmethod
+    def sort_values_cube(box_size: tuple, ref_values: np.ndarray):
+        """Sort values to follow cubefile order.
+
+        Numpy mesh grids and histograms use the inverse order to cubefiles,
+        the fastest variable is x, and the slowest is z.
+
+        Parameters
+        ----------
+        box_size : tuple
+            Amount of points in each coordinate.
+        ref_values : np.ndarray
+            Values in reference (numpy) order.
+
+        Returns
+        -------
+        values :  np.ndarray
+            Re-arranged values, sorted so they match with the cubefile order,
+            z being the fastest variable and x the slowest.
+        """
+        nx = box_size[0]
+        ny = box_size[1]
+        nz = box_size[2]
         icount = 0
+        values = np.zeros(ref_values.shape)
         for x in range(nx):
             for y in range(ny):
                 for z in range(nz):
                     fcount = x + y*ny + z*ny*nz
-                    values[icount] = grid_values[fcount, 3]
+                    values[icount] = ref_values[fcount]
                     icount += 1
-        # cube_grid = make_grid(grid_shape, vectors, origin)
-        # np.savetxt("cubic_grid.txt", cube_grid)
+        return values
