@@ -8,6 +8,8 @@ import chemcoord as cc
 import pandas as pd
 import glob as gl
 import time
+from pyclustering.cluster.xmeans import xmeans
+from pyclustering.cluster.center_initializer import kmeans_plusplus_initializer
 import matplotlib.pyplot as plt
 from matplotlib import rc
 import sys
@@ -20,7 +22,7 @@ else:
 rc('text', usetex=True)
 
 def plot_distrib(data: np.ndarray, index: Union[list,int], bins: int = 36,
-                 y_label: str = "dihedral",  
+                 x_label: str = "dihedral",  
               title: str = "", pos_range: bool = True):
     """Plots value occurrence vs value
     Parameters
@@ -50,8 +52,8 @@ def plot_distrib(data: np.ndarray, index: Union[list,int], bins: int = 36,
         index = [index]
     for i in index:
         ax.hist(data[i, :], bins=bins, range=range_)
-    ax.set_ylabel(y_label) 
-    ax.set_xlabel("frame")
+    ax.set_ylabel("occurrence") 
+    ax.set_xlabel(x_label)
     ax.set_title(title)
     return fig
 
@@ -299,7 +301,7 @@ class ic_averager:
                 int_coord_file = ic_files[0]
                 print("Using {}".format(int_coord_file))
             if len(ic_files) > 1:
-                int_coord_file = input("There seem to be many internal coordinates files. Type the one to use.")
+                int_coord_file = input("There seem to be many internal coordinates files. Type the one to use:\n")
     
         if int_coord_file[-4:] == ".txt":
             try:
@@ -362,7 +364,7 @@ class ic_averager:
         """
         if method == "std":
             diff_std = self.dih_c_std - self.dih_std
-            self.use_c = np.where(diff_std < 0)  # where it's better to use 0-360 range
+            self.use_c = np.where(diff_std < 0)[0]  # where it's better to use 0-360 range
             self.zmat._frame["dihedral"].values[self.use_c] = self.dih_c_mean[self.use_c]
     
     def detect_rotating_groups(self, method: str = "std", diff_std_thresh: Union[float, int] = 30, std_thresh: Union[float, int] = 90):
@@ -380,11 +382,51 @@ class ic_averager:
             not pandas zmat._frame.index, i.e. the cartesian numbering.
         """
         if method == "std":
-            self.rotate = np.logical_and(abs(self.dih_c_std - self.dih_std) < diff_std_thresh, abs(self.dih_std) > std_thresh)
-            print("{} atoms seem to be rotating".format(len(np.arange(60)[self.rotate])))  #TODO should we print also cartesian numbering?
-            print("array numbering: {}".format(", ".join(list(map(str,np.arange(60)[self.rotate])))))
+            self.rotate = np.arange(self.natoms)[np.logical_and(abs(self.dih_c_std - self.dih_std) < diff_std_thresh, abs(self.dih_std) > std_thresh)]
+            print("{} atoms seem to be rotating".format(self.rotate.shape[0]))  #TODO should we print also cartesian numbering?
+            print("array numbering: {}".format(", ".join(list(map(str,self.rotate)))))
             print("Cartesian numbering: {}".format(", ".join(list(map(str,self.zmat._frame.index[self.rotate])))))
     
+    def find_clusters(self, var: str = "dihedral", index: Union[None, int] = None, min_centers: int = 1, max_centers: int =3):
+        if index == None:
+            raise ValueError("You must specify \"index\".")
+        if var == "dihedral":
+            if hasattr(self, "use_c"):
+                arr = self.dih_c[index] if index in self.use_c else self.dih[index]
+            else:
+                print("Watch out! No correction of quasilinear dihedrals has been performed thus far!")
+                arr = self.dih
+            clustdictname = "dihclustdict"
+            centdictname = "dihcentdict"
+        elif var == "angle":
+            arr = self.angles[index]
+            clustdictname = "angleclustdict"
+            centdictname = "anglecentdict"
+        elif var == "bond":
+            arr = self.bonds[index]
+            clustdictname = "bondclustdict"
+            centdictname = "bondcentdict"
+        else: 
+            raise ValueError("Use either \"dihedral\" or \"angle\" or \"bond\".")
+        print(var)
+        arr = arr.reshape(-1,1)
+        initial_centers = kmeans_plusplus_initializer(arr, min_centers).initialize()
+        xmeans_instance = xmeans(arr, initial_centers, max_centers)
+        xmeans_instance.process()
+        if hasattr(self, clustdictname):
+            dict_ = getattr(self, clustdictname)
+        else:
+            dict_ = {}
+        dict_[index] = list(map(np.asarray, xmeans_instance.get_clusters()))
+        setattr(self, clustdictname, dict_)
+        if hasattr(self, centdictname):
+            dict_ = getattr(self, centdictname)
+        else:
+            dict_ = {}
+        dict_[index] = list(map(np.asarray, xmeans_instance.get_centers()))
+        setattr(self, centdictname, dict_)
+        
+
     def fix_rotate(self, method: str = "pick_first"):
         """Fixes the issue of rotating groups.
         Parameters
@@ -394,12 +436,28 @@ class ic_averager:
                 "pick_first": pick dihedrals for self.rotate from the first frame
         """
         if method == "pick_first":
-            self.zmat._frame["dihedral"].values[self.rotate] = self.zmat1._frame["dihedral"][self.rotate]
+            self.zmat._frame["dihedral"].values[self.rotate] = self.zmat1._frame["dihedral"].values[self.rotate]
+        if method == "major_basin":
+            for r in self.rotate:
+                print(r)
+                self.find_clusters(index=r)
+                weights = [len(i) for i in self.dihclustdict[r]]
+                print(weights)
+                main = weights.index(max(weights))
+                print(main)
+                if hasattr(self,"use_c"):
+                    to_sub = self.dih_c[r,self.dihclustdict[r][main]] if r in self.use_c else self.dih[r,self.dihclustdict[r][main]]
+                else:
+                    to_sub = self.dih[r,self.dihclustdict[r][main]]
+                self.zmat._frame["dihedral"].values[r] = to_sub.mean()
+                
     
     def average_int_coords(self, out_file: str = "averaged.xyz", overwrite: bool = False,
                            view: bool = True, viewer: str = "avogadro",
                            correct_quasilinears: str = "std",
                            detect_rotate: str = "std",
+                           diff_std_thresh: Union[float, int] = 30,
+                           std_thresh: Union[float, int] = 90,
                            fix_rotate: str = "pick_first"):
         """Averages the internal coordinates
         Parameters
@@ -412,6 +470,10 @@ class ic_averager:
             how quasilinear dihedrals should be corrected. "no" to skip
         detect_rotate: str
             method to detect rotation. "no" to skip
+        diff_std_thresh: float
+            diff_std_thresh for self.detect_rotate
+        std_thresh: int
+            std_thresh for self.detect_rotate
         fix_rot: str
             method to select dihedrals for rotating groups. "no" to skip"
     
@@ -422,7 +484,7 @@ class ic_averager:
         """
         options = {"correct_quasilinears": ["no", "std"],
                    "detect_rotate": ["no", "std"],
-                   "fix_rotate": ["no", "pick_first"]}
+                   "fix_rotate": ["no", "pick_first", "major_basin"]}
         if correct_quasilinears not in options["correct_quasilinears"]:
             raise ValueError("correct_quasilinears can be among {}".format(", ".join(options["correct_quasilinears"])))
         if detect_rotate not in options["detect_rotate"]:
@@ -438,7 +500,10 @@ class ic_averager:
         if correct_quasilinears != "no":
             self.correct_quasilinears(correct_quasilinears)
         if detect_rotate != "no":
-            self.detect_rotating_groups(detect_rotate)
+            if detect_rotate == "std":
+                self.detect_rotating_groups("std", diff_std_thresh=diff_std_thresh, std_thresh=std_thresh)
+            else:
+                raise ValueError("Only \"std\" is implemented now as rotation detection")
             if fix_rotate != "no":
                 self.fix_rotate(fix_rotate)
         self.cart = self.zmat.get_cartesian()
