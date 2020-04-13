@@ -369,25 +369,32 @@ class ic_averager:
             except:
                 print("zmat not defined yet, so only setting self.use_c")
     
-    def detect_rotating_groups(self, method: str = "std", diff_std_thresh: Union[float, int] = 30, std_thresh: Union[float, int] = 90):
+    def detect_rotating_groups(self, method: str = "std", thresh_min: Union[float, int] = 90, thresh_max: Union[float, int] = 180, group_name: str = "rotate"):
         """Find the freely rotating dihedrals
         Parameters
         ----------
         method: str
             method to detect dihedrals. Options:
-                "std": dih for which std deviation is similar in (-180,180) and (0,360) but large in both
+                "std": dih for which the minimum std deviation between (-180,180) and (0,360) is between thres_min and thresh_max
+        thresh_min: float or int
+            threshold for minimum std for the dihedral on the most appropriate range
+        thresh_max: float or int
+            threshold for maximum std for the dihedral on the most appropriate range
                 
         Sets
         ----
-        self.rotate: np.array
+        self.[group_name]: np.array
             indexes of rotating dihedral. Nb this is numpy simple (0-natoms) numbering for dih,
             not pandas zmat._frame.index, i.e. the cartesian numbering.
         """
         if method == "std":
-            self.rotate = np.arange(self.natoms)[np.logical_and(abs(self.dih_c_std - self.dih_std) < diff_std_thresh, abs(self.dih_std) > std_thresh)]
-            print("{} atoms seem to be rotating".format(self.rotate.shape[0]))  
-            print("array numbering: {}".format(", ".join(list(map(str,self.rotate)))))
-            print("Cartesian numbering: {}".format(", ".join(list(map(str,self.zmat._frame.index[self.rotate])))))
+#            self.rotate = np.arange(self.natoms)[np.logical_and(abs(self.dih_c_std - self.dih_std) < diff_std_thresh,
+#                                                 np.maximum(abs(self.dih_std), abs(self.dih_c_std)) > std_thresh)]
+            detected = np.arange(self.natoms)[np.logical_and(np.minimum(self.dih_std, self.dih_c_std) > thresh_min,np.minimum(self.dih_std, self.dih_c_std) < thresh_max)]
+            setattr(self, group_name, detected)
+            print("{} atoms have been detected with the specified thresholds".format(detected.shape[0]))  
+            print("array numbering: {}".format(", ".join(list(map(str,detected)))))
+            print("Cartesian numbering: {}".format(", ".join(list(map(str,self.zmat1._frame.index[detected])))))
     
     def find_clusters(self, var: str = "", index: Union[None, int] = None, min_centers: int = 1, max_centers: int =3):
         """
@@ -436,7 +443,7 @@ class ic_averager:
         setattr(self, centdictname, dict_)
         
 
-    def fix_rotate(self, method: str = "pick_first"):
+    def fix_rotate(self, method: str = "pick_first", group_name: str = "rotate"):
         """Fixes the issue of rotating groups.
         Parameters
         ----------
@@ -445,10 +452,10 @@ class ic_averager:
                 "pick_first": pick dihedrals for self.rotate from the first frame
         """
         if method == "pick_first":
-            self.zmat._frame["dihedral"].values[self.rotate] = self.zmat1._frame["dihedral"].values[self.rotate]
+            self.zmat._frame["dihedral"].values[getattr(self, group_name)] = self.zmat1._frame["dihedral"].values[getattr(self, group_name)]
         if method == "major_basin":
             groups=[]  # becomes list of 1D-array
-            for r  in self.rotate:
+            for r  in getattr(self, group_name):
                 if r not in list(it.chain.from_iterable(groups)):
                     b2s_cart = self.c_table[self.c_table["b"]==self.c_table.iloc[r]["b"]].index  # bound to the same, cartesian numbering
                     b2s_arr = [self.c_table.index.get_loc(i) for i in b2s_cart]  # passing to arr numbering
@@ -482,10 +489,14 @@ class ic_averager:
                            view: bool = True, viewer: str = "avogadro",
                            correct_quasilinears: str = "std",
                            detect_rotate: str = "std",
-                           diff_std_thresh: Union[float, int] = 30,
-                           std_thresh: Union[float, int] = 90,
-                           fix_rotate: str = "pick_first"):
-        """Averages the internal coordinates
+                           thresh_rot: Union[float, int] = 90,
+                           fix_rotate: str = "pick_first",
+                           detect_osc: str = "std",
+                           thresh_osc: Union[float, int] = 40,
+                           fix_osc: str = "major_basin"):
+        """Averages the internal coordinates. Rotate/ing refers to fully/freely rotating groups,
+        oscillate/ing refers to groups oscillating between two conformers.
+        
         Parameters
         ----------
         out_file: str
@@ -496,13 +507,16 @@ class ic_averager:
             how quasilinear dihedrals should be corrected. "no" to skip
         detect_rotate: str
             method to detect rotation. "no" to skip
-        diff_std_thresh: float
-            diff_std_thresh for self.detect_rotate
-        std_thresh: int
-            std_thresh for self.detect_rotate
+        thresh_rot: float or int
+            used as thresh_min for self.detect_rotate
         fix_rot: str
             method to select dihedrals for rotating groups. "no" to skip"
-    
+        detect_osc: str
+            method to detect rotation. "no" to skip
+        thresh_osc: float or int
+            used as thresh_min for self.detect_rotate(group_name="oscillate"), thresh_max is set to thresh_rot
+        fix_osc: str
+            method to select dihedrals for oscillating groups. "no" to skip"    
         Returns
         -------
         cc.Zmat
@@ -525,13 +539,20 @@ class ic_averager:
         
         if correct_quasilinears != "no":
             self.correct_quasilinears(correct_quasilinears)
-        if detect_rotate != "no":
+        if detect_rotate != "no":  # all acting on group_name="rotate", which is default
             if detect_rotate == "std":
-                self.detect_rotating_groups("std", diff_std_thresh=diff_std_thresh, std_thresh=std_thresh)
+                self.detect_rotating_groups(method = "std", thresh_min = thresh_rot)
             else:
                 raise ValueError("Only \"std\" is implemented now as rotation detection")
             if fix_rotate != "no":
-                self.fix_rotate(fix_rotate)
+                self.fix_rotate(method = fix_rotate)
+        if detect_osc != "no":  # all acting on group_name="osc"
+            if detect_rotate == "std":
+                self.detect_rotating_groups(method = "std", thresh_min = thresh_osc, thresh_max = thresh_rot, group_name = "osc")
+            else:
+                raise ValueError("Only \"std\" is implemented now as rotation detection")
+            if fix_rotate != "no":
+                self.fix_rotate(method = fix_rotate, group_name = "osc")        
         self.cart = self.zmat.get_cartesian()
         if overwrite or not os.path.exists(out_file):
             self.cart.to_xyz(out_file)
