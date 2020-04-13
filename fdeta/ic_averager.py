@@ -8,6 +8,7 @@ import chemcoord as cc
 import pandas as pd
 import glob as gl
 import time
+import itertools as it
 from pyclustering.cluster.xmeans import xmeans
 from pyclustering.cluster.center_initializer import kmeans_plusplus_initializer
 import matplotlib.pyplot as plt
@@ -260,9 +261,6 @@ class ic_averager:
                 print("saved bonds, angles, dihedrals in {}".format(int_coords_file))
             else:
                 int_coords_file += ".txt" if "txt" not in int_coords_file else ""
-#                np.savetxt(int_coords_file[:-4] + "_bonds.txt", np.array(bonds), fmt=fmt)
-#                np.savetxt(int_coords_file[:-4] + "_angles.txt", np.array(angles), fmt=fmt)
-#                np.savetxt(int_coords_file[:-4] + "_dihedrals.txt", np.array(dih), fmt=fmt)
                 np.savetxt(int_coords_file[:-4] + "_bonds.txt", np.array(bonds))
                 np.savetxt(int_coords_file[:-4] + "_angles.txt", np.array(angles))
                 np.savetxt(int_coords_file[:-4] + "_dihedrals.txt", np.array(dih))
@@ -334,7 +332,7 @@ class ic_averager:
             if os.path.exists("aligned0.xyz"):
                 aligned_fn = "aligned0.xyz"  # use correct default name for aligned xyz
             else:
-                aligned_fn = input("If the aligned .xyz exists, it did not have the default name. Please type it")
+                aligned_fn = input("If the aligned .xyz exists, it did not have the default name. Please type it\n")
 
         with open(aligned_fn, 'r') as file:
             n_atoms, n_frames = bonds.shape
@@ -363,9 +361,13 @@ class ic_averager:
             updates dihedrals in zmat(avg)
         """
         if method == "std":
-            diff_std = self.dih_c_std - self.dih_std
-            self.use_c = np.where(diff_std < 0)[0]  # where it's better to use 0-360 range
-            self.zmat._frame["dihedral"].values[self.use_c] = self.dih_c_mean[self.use_c]
+            if not hasattr(self,"use_c"):
+                diff_std = self.dih_c_std - self.dih_std
+                self.use_c = np.where(diff_std < 0)[0]  # where it's better to use 0-360 range
+            try:
+                self.zmat._frame["dihedral"].values[self.use_c] = self.dih_c_mean[self.use_c]
+            except:
+                print("zmat not defined yet, so only setting self.use_c")
     
     def detect_rotating_groups(self, method: str = "std", diff_std_thresh: Union[float, int] = 30, std_thresh: Union[float, int] = 90):
         """Find the freely rotating dihedrals
@@ -378,21 +380,28 @@ class ic_averager:
         Sets
         ----
         self.rotate: np.array
-            indexes of rotating dihedral. Nb this is numpy simple (0,natoms) numbering for dih,
+            indexes of rotating dihedral. Nb this is numpy simple (0-natoms) numbering for dih,
             not pandas zmat._frame.index, i.e. the cartesian numbering.
         """
         if method == "std":
             self.rotate = np.arange(self.natoms)[np.logical_and(abs(self.dih_c_std - self.dih_std) < diff_std_thresh, abs(self.dih_std) > std_thresh)]
-            print("{} atoms seem to be rotating".format(self.rotate.shape[0]))  #TODO should we print also cartesian numbering?
+            print("{} atoms seem to be rotating".format(self.rotate.shape[0]))  
             print("array numbering: {}".format(", ".join(list(map(str,self.rotate)))))
             print("Cartesian numbering: {}".format(", ".join(list(map(str,self.zmat._frame.index[self.rotate])))))
     
-    def find_clusters(self, var: str = "dihedral", index: Union[None, int] = None, min_centers: int = 1, max_centers: int =3):
+    def find_clusters(self, var: str = "", index: Union[None, int] = None, min_centers: int = 1, max_centers: int =3):
+        """
+        TODO:docstring
+        """
+        using_c = False
         if index == None:
             raise ValueError("You must specify \"index\".")
+        if var == "":
+            print("no variable type specified, supposing it is \"dihedral\"")
+            var = "dihedral"
         if var == "dihedral":
             if hasattr(self, "use_c"):
-                arr = self.dih_c[index] if index in self.use_c else self.dih[index]
+                (arr, using_c) = (self.dih_c[index],True) if index in self.use_c else (self.dih[index], False)
             else:
                 print("Watch out! No correction of quasilinear dihedrals has been performed thus far!")
                 arr = self.dih
@@ -408,7 +417,6 @@ class ic_averager:
             centdictname = "bondcentdict"
         else: 
             raise ValueError("Use either \"dihedral\" or \"angle\" or \"bond\".")
-        print(var)
         arr = arr.reshape(-1,1)
         initial_centers = kmeans_plusplus_initializer(arr, min_centers).initialize()
         xmeans_instance = xmeans(arr, initial_centers, max_centers)
@@ -423,7 +431,8 @@ class ic_averager:
             dict_ = getattr(self, centdictname)
         else:
             dict_ = {}
-        dict_[index] = list(map(np.asarray, xmeans_instance.get_centers()))
+        centers = [conv_d(i) for i in list(it.chain.from_iterable(xmeans_instance.get_centers()))] if using_c else list(it.chain.from_iterable(xmeans_instance.get_centers()))
+        dict_[index] = list(map(np.asarray, centers))
         setattr(self, centdictname, dict_)
         
 
@@ -438,20 +447,37 @@ class ic_averager:
         if method == "pick_first":
             self.zmat._frame["dihedral"].values[self.rotate] = self.zmat1._frame["dihedral"].values[self.rotate]
         if method == "major_basin":
-            for r in self.rotate:
-                print(r)
-                self.find_clusters(index=r)
-                weights = [len(i) for i in self.dihclustdict[r]]
-                print(weights)
-                main = weights.index(max(weights))
-                print(main)
-                if hasattr(self,"use_c"):
-                    to_sub = self.dih_c[r,self.dihclustdict[r][main]] if r in self.use_c else self.dih[r,self.dihclustdict[r][main]]
-                else:
-                    to_sub = self.dih[r,self.dihclustdict[r][main]]
-                self.zmat._frame["dihedral"].values[r] = to_sub.mean()
-                
-    
+            groups=[]  # becomes list of 1D-array
+            for r  in self.rotate:
+                if r not in list(it.chain.from_iterable(groups)):
+                    b2s_cart = self.c_table[self.c_table["b"]==self.c_table.iloc[r]["b"]].index  # bound to the same, cartesian numbering
+                    b2s_arr = [self.c_table.index.get_loc(i) for i in b2s_cart]  # passing to arr numbering
+                    groups.append(b2s_arr)
+            for gr in groups:  # gr is an array
+                if len(gr)==1: # if only 1 rotating in gr,  e.g. H in OH
+                    self.find_clusters(index = gr[0], min_centers = 2, max_centers = 3, var = "dihedral")
+                    weights = [len(i) for i in self.dihclustdict[gr[0]]]
+                    main = weights.index(max(weights))
+                    self.zmat._frame["dihedral"].values[gr[0]] = self.dihcentdict[gr[0]][main]
+                else:  # if more than 1 rotating in gr, e.g. methyl
+                    weights = []  # will be list of lists with basin weights per dih in group
+                    sort_weights = []  # same but ordered
+                    prom = []  # prominence for each d in gr
+                    for n,d in enumerate(gr):  # n is numbering within group, d is numbering for dih
+                        print("n: {}, d: {}".format(n,d))
+                        self.find_clusters(index = d, min_centers = 2, max_centers = 3, var = "dihedral")
+                        weights.append([len(i) for i in self.dihclustdict[d]])
+                        sort_weights.append(sorted(weights[n]))
+                        prom.append(sort_weights[n][-1] - sort_weights[n][-2])
+                    topick = prom.index(max(prom))  # best n to pick the major basin, use gr[topick] to get d
+                    tosub = self.dihcentdict[gr[topick]][weights[topick].index(max(weights[topick]))]
+                    for n,d in enumerate(gr):  # n is numbering within group, d is numbering for dih
+                        if n == topick:
+                            self.zmat._frame["dihedral"].values[d] = tosub 
+                        else:
+                            diff = (conv_d(self.dih[gr[topick],:] - self.dih[d,:])).mean()
+                            self.zmat._frame["dihedral"].values[d] = tosub - diff
+                        
     def average_int_coords(self, out_file: str = "averaged.xyz", overwrite: bool = False,
                            view: bool = True, viewer: str = "avogadro",
                            correct_quasilinears: str = "std",
