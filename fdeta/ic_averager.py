@@ -21,6 +21,38 @@ else:
 
 
 rc('text', usetex=True)
+def plot_2Ddistrib(data: np.ndarray, index: list, bins: int = 36,
+                 x_label: str = "dihedral",  
+              title: str = "", pos_range: bool = True):
+    """Plots value occurrence vs value
+    Parameters
+    ----------
+    data: np.array
+        the array to slice and plot from. Generally np.array(natoms, nframes)
+    index: list or int
+        index or list of indexes to plot (data[index,:])
+    bins: int
+        number of bins for histogram. default is 36
+    y_label: str 
+        label for y axis. default is "dihedral"
+    title: str
+        title for the plot. default is empty string
+    pos_range: bool
+        whether to plot in the (-180,180) or in the (0,360) range
+    
+    Returns
+    -------
+    plt.figure
+        the histogram with distribution of data[i,:] for i in index
+    """
+    fig = plt.figure(figsize=(20, 10), dpi=150)
+    ax = fig.add_subplot(111)
+    range_ = (0, 360) if pos_range else (-180, 180)
+    ax.hist2d(data[index[0], :], data[index[1], :], bins=[bins,bins], range=(range_,range_))
+    ax.set_ylabel("{}".format(index[1])) 
+    ax.set_xlabel("{}".format(index[0]))
+    ax.set_title(title)
+    return fig
 
 def plot_distrib(data: np.ndarray, index: Union[list,int], bins: int = 36,
                  x_label: str = "dihedral",  
@@ -135,6 +167,13 @@ class ic_averager:
             self.avg_bond_angles = False # full distribution of bonds and angles
         else:
             raise AttributeError("Wrong shape for bond array")
+            
+    def copy(self):
+        """Copies the ic_averager        
+        """
+        import copy as c
+        return c.copy(self)
+        
     @classmethod
     def from_arrays(cls, atoms: Union[np.ndarray,list], arr: np.ndarray, int_coords_file: str = "internal_coordinates.npz",
                                save: bool =True, avg_bond_angles: bool = False, dec_digits: int = 3):
@@ -483,7 +522,7 @@ class ic_averager:
                             self.zmat._frame["dihedral"].values[d] = tosub 
                         else:
                             diff = (conv_d(self.dih[gr[topick],:] - self.dih[d,:])).mean()
-                            self.zmat._frame["dihedral"].values[d] = tosub - diff
+                            self.zmat._frame["dihedral"].values[d] = conv_d(tosub - diff)
                         
     def average_int_coords(self, out_file: str = "averaged.xyz", overwrite: bool = False,
                            view: bool = True, viewer: str = "avogadro",
@@ -523,14 +562,14 @@ class ic_averager:
             the averaged structure
         """
         options = {"correct_quasilinears": ["no", "std"],
-                   "detect_rotate": ["no", "std"],
-                   "fix_rotate": ["no", "pick_first", "major_basin"]}
+                   "detect_rotate": ["no", "std", "stored"],
+                   "fix": ["no", "pick_first", "major_basin"]}
         if correct_quasilinears not in options["correct_quasilinears"]:
             raise ValueError("correct_quasilinears can be among {}".format(", ".join(options["correct_quasilinears"])))
         if detect_rotate not in options["detect_rotate"]:
             raise ValueError("detect_rotate can be among {}".format(", ".join(options["detect_rotate"])))
-        if fix_rotate not in options["fix_rotate"]:
-            raise ValueError("fix_rot can be among {}".format(", ".join(options["fix_rotate"])))
+        if fix_rotate not in options["fix"] or fix_osc not in options["fix"]:
+            raise ValueError("fixing methods can be among {}".format(", ".join(options["fix"])))
             
         self.zmat = self.zmat1.copy()
         self.zmat._frame["bonds"] == self.bonds if self.avg_bond_angles else self.bonds.mean(axis=1) 
@@ -539,20 +578,27 @@ class ic_averager:
         
         if correct_quasilinears != "no":
             self.correct_quasilinears(correct_quasilinears)
+#            print("corrected quasilinears")
         if detect_rotate != "no":  # all acting on group_name="rotate", which is default
             if detect_rotate == "std":
                 self.detect_rotating_groups(method = "std", thresh_min = thresh_rot)
+            elif detect_rotate == "stored":
+                pass
             else:
                 raise ValueError("Only \"std\" is implemented now as rotation detection")
             if fix_rotate != "no":
                 self.fix_rotate(method = fix_rotate)
+#                print("fixed rotate with method: {}".format(fix_rotate))
         if detect_osc != "no":  # all acting on group_name="osc"
-            if detect_rotate == "std":
+            if detect_osc == "std":
                 self.detect_rotating_groups(method = "std", thresh_min = thresh_osc, thresh_max = thresh_rot, group_name = "osc")
+            elif detect_osc == "stored":
+                pass
             else:
                 raise ValueError("Only \"std\" is implemented now as rotation detection")
-            if fix_rotate != "no":
-                self.fix_rotate(method = fix_rotate, group_name = "osc")        
+            if fix_osc != "no":
+                self.fix_rotate(method = fix_osc, group_name = "osc")  
+#                print("fixed oscillate with method: {}".format(fix_osc))
         self.cart = self.zmat.get_cartesian()
         if overwrite or not os.path.exists(out_file):
             self.cart.to_xyz(out_file)
