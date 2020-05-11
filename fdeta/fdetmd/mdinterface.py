@@ -33,7 +33,8 @@ class MDInterface:
     """
     def __init__(self, ta_object: MDTrajectory,
                  box_size: np.ndarray, grid_size: tuple,
-                 frag_id: int = 0, average_solute: bool = False):
+                 frag_id: int = 0, average_solute: bool = False,
+                 heteroatoms: list = None):
         """ Create a pcf ta_object.
 
         Parameters
@@ -51,6 +52,7 @@ class MDInterface:
             Whether the solute molecules also need to be averaged.
 
         """
+        self.heteroatoms = heteroatoms
         self.ta_object = ta_object
         if hasattr(ta_object, 'charges'):
             self.charges = ta_object.charges
@@ -123,14 +125,22 @@ class MDInterface:
             else:
                 charge_coeffs = {}
                 for element in self.charges:
-                    eff_charge = charges[element]
-                    zcharge = atom_to_charge(clean_atom_name(element))
+                    eff_charge = self.charges[element]
+                    if self.heteroatoms is not None:
+                        zcharge = atom_to_charge(clean_atom_name(element,
+                                                 self.heteroatoms))
+                    else: 
+                        zcharge = atom_to_charge(clean_atom_name(element))
                     if eff_charge > 0:
                         charge_coeffs[element] = (zcharge - eff_charge)/zcharge
                     else:
                         charge_coeffs[element] = (zcharge + abs(eff_charge))/zcharge
         for ielement in charge_coeffs:
-            zcharge = atom_to_charge(clean_atom_name(ielement))
+            if self.heteroatoms is not None:
+                zcharge = atom_to_charge(clean_atom_name(ielement,
+                                         self.heteroatoms))
+            else: 
+                zcharge = atom_to_charge(clean_atom_name(ielement))
             if rhocube is None:
                 rhocube = (-charge_coeffs[ielement]*zcharge
                            * self.pcf[ielement] / self.ta_object.eframes[ielement])
@@ -167,7 +177,11 @@ class MDInterface:
         """
         nuclei = None
         for ielement in self.pcf:
-            zcharge = atom_to_charge(clean_atom_name(ielement))
+            if self.heteroatoms is not None:
+                zcharge = atom_to_charge(clean_atom_name(ielement,
+                                         self.heteroatoms))
+            else: 
+                zcharge = atom_to_charge(clean_atom_name(ielement))
             if nuclei is None:
                 nuclei = (zcharge*self.pcf[ielement]
                           /self.ta_object.eframes[ielement])
@@ -230,8 +244,8 @@ class MDInterface:
         interpolated = interpolate_function(refgrid, values, fingrid, function)
         return interpolated
 
-    def compute_electrostatic_potential(self, charge_coeffs: dict,
-                                       fingrid: Union[str, np.ndarray],
+    def compute_electrostatic_potential(self, fingrid: Union[str, np.ndarray],
+                                       charge_coeffs: dict = None,
                                        fname: str = 'elst_pot.txt'):
         """ Evaluate and save electrostatic potential.
 

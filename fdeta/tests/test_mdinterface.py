@@ -47,10 +47,58 @@ def test_mdinterface_histogram():
     # Not normalized after! assert np.sum(rho)/2 == -20
     assert np.sum(rho)/2 == -10  # New version
     gridname = os.path.join(dic, 'grid_vemb.dat')
-    mdi.compute_electrostatic_potential(ccoeffs, gridname)
+    mdi.compute_electrostatic_potential(gridname, ccoeffs)
     elst = np.loadtxt('elst_pot.txt')
     ref_elst = np.loadtxt(os.path.join(dic, 'ElectrostaticADF'))
     np.allclose(elst[:, 3], ref_elst[:, 3])
+    os.remove('elst_pot.txt')
+
+
+def test_mdinterface_histogram_with_charges():
+    """Test to initialize `MDInterface`."""
+    # Define variables to break code
+    dic = os.getenv('FDETADATA')
+    traj = os.path.join(dic, 'test_traj.fde')
+    cfile = os.path.join(dic, 'test_charges.txt')
+    box_size = np.array([10, 10, 10])
+    grid_size = (10, 10, 10)
+    ta = MDTrajectory(traj, cfile)
+    mdi = MDInterface(ta, box_size, grid_size)
+    mdi.save_grid('second_text.txt')
+    assert (mdi.delta == 1.0).all()
+    rho = mdi.get_elec_density()
+    # Not normalized after! assert np.sum(rho)/2 == -20
+    assert np.sum(rho)/2 == -10  # New version
+    gridname = os.path.join(dic, 'grid_vemb.dat')
+    mdi.compute_electrostatic_potential(gridname)
+    elst = np.loadtxt('elst_pot.txt')
+    ref_elst = np.loadtxt(os.path.join(dic, 'ElectrostaticADF'))
+    np.allclose(elst[:, 3], ref_elst[:, 3])
+    os.remove('elst_pot.txt')
+
+
+def test_mdinterface_with_heteroatoms():
+    """Test option for heteroatoms"""
+    # Define variables to break code
+    dic = os.getenv('FDETADATA')
+    traj = os.path.join(dic, 'test_traj_heteroatoms.fde')
+    cfile = os.path.join(dic, 'test_charges_heteroatoms.txt')
+    box_size = np.array([20, 20, 20])
+    grid_size = (10, 10, 10)
+    heteroatoms = ['K', 'Ca', 'Cl']
+    point = np.array([[0.124, 3.049, 2.987, 0.000]])
+    ta = MDTrajectory(traj, cfile)
+    mdi = MDInterface(ta, box_size, grid_size, heteroatoms=heteroatoms)
+    # Get charge density
+    rho = mdi.get_elec_density(ingrid=True)
+    nuc = mdi.get_nuclear_density(ingrid=True)
+    chargedens = rho+nuc
+    mdi.compute_electrostatic_potential(point)
+    elst = np.loadtxt('elst_pot.txt')
+    # calculated by hand
+    ref_value = [0.124, 3.049, 2.987, 0.00014532072354]
+    np.allclose(ref_value, elst)
+    os.remove('elst_pot.txt')
 
 
 def test_mdinterface_acetone_w2():
@@ -72,7 +120,7 @@ def test_mdinterface_acetone_w2():
     np.savetxt('nuc_charge_acetone.txt', nuc)
     total = rho[:, 3] + nuc[:, 3]
     np.savetxt('total_charge.txt', total)
-    mdi.compute_electrostatic_potential(ccoeffs, gridname)
+    mdi.compute_electrostatic_potential(gridname, ccoeffs)
     rhoB = np.nan_to_num(mdi.get_rhob(ccoeffs, gridname)[:, 3])
     rhoB[np.where(rhoB < 0)[0]] = 0.0
     assert np.all(rhoB >= 0)
@@ -90,4 +138,6 @@ def test_mdinterface_acetone_w2():
 if __name__ == "__main__":
     test_mdinterface_base()
     test_mdinterface_histogram()
+    test_mdinterface_histogram_with_charges()
+    test_mdinterface_with_heteroatoms()
 #   test_mdinterface_acetone_w2()
