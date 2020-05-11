@@ -7,6 +7,7 @@ The Pair Correlation Function related tools.
 import numpy as np
 from scipy import interpolate
 from scipy.interpolate import interp1d
+from scipy.interpolate import NearestNDInterpolator as ndinterpolator
 from fdeta.fdetmd.cgrid_tools import BoxGrid
 from fdeta.cube import make_cubic_grid
 
@@ -92,7 +93,7 @@ def interpolate_function_split(refgrid: np.ndarray,
 
 def interpolate_function_sectors(cube: dict,
                                  grid: np.ndarray, 
-                                 npoints: int = 20,
+                                 npoints: int = 5,
                                  function: str='gaussian'):
     """ Interpolate some function to an external grid.
 
@@ -131,7 +132,9 @@ def interpolate_function_sectors(cube: dict,
         cmax = corigin[i] + cgrid_shape[i]*cvectors[i, i]
         gmin = min(grid[:, i])
         gmax = max(grid[:, i])
+        print("pyscf limits= ", gmin, gmax)
         common_range.append((min(cmin, gmin), max(cmax, gmax)))
+        print("common =", common_range[i])
         div = cgrid_shape[i] // npoints
         spt = list(np.arange(0, cgrid_shape[i], div))
         vec = np.arange(cmin, cmax, cvectors[i][i])
@@ -151,17 +154,21 @@ def interpolate_function_sectors(cube: dict,
             rmin = splits[i][b]
             rmax = splits[i][b+1]
             # make masks for grids
-       #    mins_cube = np.where(rmin <= cubicgrid[:, i])[0]
-       #    maxs_cube = np.where(cubicgrid[:, i] <= rmax)[0]
             inds_cube.append(np.logical_and(rmin <= cubicgrid[:, i], cubicgrid[:, i] <= rmax))
             inds_grid.append(np.logical_and(rmin <= grid[:, i], grid[:, i] <= rmax))
-       #    mins_grid = np.where(rmin <= grid[:, i])[0]
-       #    maxs_grid = np.where(grid[:, i] <= rmax)[0]
         mask_cubic = [all(point) for point in list(zip(inds_cube[0], inds_cube[1], inds_cube[2]))]
-        mask_grid = [all(point) for point in list(zip(inds_grid[0], inds_grid[1], inds_grid[2]))]
-        grid[mask_grid] = interpolate_function(cubicgrid[mask_cubic],
-                                               values[mask_cubic],
-                                               grid[mask_grid])
+        mask_grid = [any(point) for point in list(zip(inds_grid[0], inds_grid[1], inds_grid[2]))]
+        assert any(mask_cubic)
+        if not any(mask_grid):
+            print("Nothing in this range (%.2f, %.2f)" (rmin, rmax))
+        if function == 'nearest':
+            ndint = ndinterpolator(cubicgrid[mask_cubic], values[mask_cubic])
+            grid[mask_grid, 3] = ndint(grid[mask_grid, :3])
+        else:
+            grid[mask_grid] = interpolate_function(cubicgrid[mask_cubic],
+                                                   values[mask_cubic],
+                                                   grid[mask_grid],
+                                                   function)
     return grid
 
 

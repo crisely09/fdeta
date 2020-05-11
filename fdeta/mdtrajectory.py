@@ -12,7 +12,8 @@ Base Class for trajectory analysis.
 import numpy as np
 from typing import Union
 import fdeta.kabsch as kb
-from fdeta.traj_tools import default_charges
+from fdeta.traj_tools import default_charges, find_unique_elements
+from fdeta.traj_tools import data_from_file
 
 
 class MDTrajectory:
@@ -43,66 +44,114 @@ class MDTrajectory:
         Parameters
         ----------
         traj_file :
-            Name of the XYZ trajectory file.
+            Name of the trajectory file. The `.fde` format
+            is the extended `.xyz` with frament IDs:
             'number of atoms
              number of frame
-             element  X Y Z molecule_ID'
+             element  X Y Z fragment_ID'
         charges_file :
             Name of file with charges for each atom.
 
         """
-        # Read trajectory from file
-        with open(traj_file, "r") as f:
-            data = f.readlines()
+        # Save trajectory info
+        data = data_from_file(traj_file)
+        if 'ids' in data:
+            unique_ids = find_unique_elements(data['ids'])
+            unique_ids = [int(u) for u in unique_ids]
+        else:
+            unique_ids = [0]
 
-        frags = []
-        elements = []
-        self.charges = {}
+        self.frags = unique_ids
+        self.nfrags = len(unique_ids)
+        self.nframes = len(data['elements'])
+        self.natoms = len([item for sublist in data['elements']
+                           for item in sublist])
+        self.elements = data['elements']
+        self.uniques = find_unique_elements(data['elements'])
+        self.eframes = {}
         self.aligned = {}
         self.errors = {}
         self.edges = None
-        for i, line in enumerate(data):
-            if i == 0:
-                self.natoms = np.int(line)
-                self.frames = np.zeros((1, self.natoms, 4))
-                self.nframes = 1
-                current = 0
-                atom_count = 0
-            elif i == self.nframes*(self.natoms + 2):
-                atom_count = 0
-                current += 1
-                self.nframes += 1
-                self.frames = np.append(self.frames, np.zeros((1, self.natoms, 4)), axis=0)
-            elif i == current*(self.natoms+2) + 1:
-                pass
-            else:
-                if current == 0:
-                    elements.append(line.split()[0])
-                self.frames[current][atom_count] = np.float64(line.rsplit()[1:])
-                ifrag = self.frames[current][atom_count][-1]
-                if ifrag not in frags:
-                    frags.append(int(ifrag))
-                atom_count += 1
-        self.frags = frags
-        self.nfrags = len(frags)
-
-        # Save the information in the trajectory dictionary
-        self.elements = elements
-        elements = np.array(elements, dtype=str)
         self.trajectory = {}
-        for frag_id in frags:
-            index = np.where(self.frames[:, :, 3] == frag_id)  # All indices of subsystem
-            natom_frag = len(index[1])//self.nframes
-            fragment = np.reshape(self.frames[index],
-                                  (self.nframes, natom_frag, 4))
-            self.trajectory[frag_id] = dict(geometries=fragment[:, :, :3],
-                                          elements=elements[index[1][:natom_frag]])
-
-        # Save charges of all elements in the system
-        if charges_file is None:
-            self.charges = default_charges(elements)
-        else:
+        for i in range(self.nframes):
+            elements = np.array(data['elements'][i], dtype=str)
+            # Save number of apearances of elements
+            for ielement in self.uniques:
+                if ielement in elements:
+                    if ielement in self.eframes:
+                        self.eframes[ielement] += 1
+                    else:
+                        self.eframes[ielement] = 1
+            geometries = np.array(data['geometries'][i], dtype=float)
+            natoms = len(elements)
+            if 'ids' in data:
+                ids = np.array(data['ids'][i], dtype=int)
+                for frag_id in unique_ids:
+                    if i == 0:
+                        self.trajectory[frag_id] = dict(geometries=[],
+                                                        elements=[])
+                    index = np.where(ids == frag_id)[0]
+                    self.trajectory[frag_id]['geometries'].append(geometries[index])
+                    self.trajectory[frag_id]['elements'].append(elements[index])
+            else:
+                frag_id = 0
+                if i == 0:
+                    self.trajectory[frag_id] = dict(geometries=[],
+                                                    elements=[])
+                self.trajectory[frag_id]['geometries'].append(geometries)
+                self.trajectory[frag_id]['elements'].append(elements)
+        # Save charges if given
+        if charges_file is not None:
             self.read_charges(charges_file)
+
+    def add_fragment(fragment, frag_id=None):
+        """ Add fragment to trajectory.
+
+        Parameters
+        ----------
+        fragment : str or dict
+            Information of the new fragment, given
+            in a file or as a dictionary of elements and geometries
+            per frame. Number of frames needs to match with
+            original trajectory.
+        frag_id : int
+            Fragment ID, to identify it later.
+        """
+        if frag_id is None:
+            frag_id = self.nfrags
+            self.nfrags += 1
+        else:
+            if frag_id in self.frags:
+                raise ValueError("""That fragment already exist, for updates use""" 
+                                 """ `update_frag_geometries` method.""")
+        # If read from file
+        if isinstance(fragment, str):
+            data = self.data_from_file(fragment)
+            self.trajectory[frag_id] = data
+            for i in range(self.nframes):
+                elements = np.array(data['elements'][i], dtype=str)
+                geometries = np.array(data['geometries'][i], dtype=float)
+                if i == 0:
+                    self.trajectory[frag_id] = dict(geometries=[],
+                                                    elements=[])
+                self.trajectory[frag_id]['geometries'].append(geometries)
+                self.trajectory[frag_id]['elements'].append(elements)
+        # If it's already a dictionary
+        elif isinstance(fragment, dict):
+            if not 'elements' in fragment:
+                raise KeyError("Fragment must contain `elements`.")
+            if not 'geometries' in fragment:
+                raise KeyError("Fragment must contain `geometries`.")
+            if len(data['elements']) != len(data['geometries']):
+                raise ValueError("Wrong shape or arrange of `elements` and `geometries`")
+            nframes = len(data['elements'])
+            if nframes != self.nframes:
+                raise ValueError("Wrong number of frames of input fragment from dictionary.")
+            if isinstance(elements[0], list):
+                for i in range(nframes):
+                    elements[i] = np.array(elements[i], dtype=str)
+                    geometries[i] = np.array(geometries[i], dtype=float)
+            self.trajectory[frag_id] = fragment
 
     def read_charges(self, fname: str):
         """ Read charges from file.
@@ -116,34 +165,31 @@ class MDTrajectory:
 
         """
         # Read charges and find unique elements
+        self.charges = {}
         elements = []
         uniques = []
         repeated = {}  # use to count repeated atoms with diff charges
         with open(fname, "r") as fc:
             cdata = fc.readlines()
-        if len(cdata) != self.natoms:
-            assert ValueError("Number of atoms in charge_file does not match with trajectory given.")
         for i, line in enumerate(cdata):
             element, charge = line.split()
-            elements.append(element)
+            # check that the element is used in
+            if element not in self.uniques:
+                print("""Element not used: %s.""" % element)
+            else:
+                elements.append(element)
             if element not in self.charges:
-                self.charges[element] = (i, float(charge))
+                self.charges[element] = float(charge)
                 uniques.append(element)
             else:
-                if self.charges[element][1] != float(charge):
+                if self.charges[element] != float(charge):
                     if element in repeated:
                         repeated[element] += 1
                     else:
                         repeated[element] = 0
                     nelement = element + str(repeated[element])
-                    self.charges[nelement] = (i, float(charge))
+                    self.charges[nelement] = float(charge)
                     uniques.append(nelement)
-        self.elements = uniques
-        uniques = np.array(uniques, dtype=str)
-        # Now save trajectory with the right types of atoms
-        for frag_id in self.frags:
-            index = np.where(self.frames[:, :, 3] == frag_id)
-            self.trajectory[frag_id]['uniques'] = uniques[index[0]]
 
     def get_structure_from_trajectory(self, frag_id: int = None,
                                     iframe: int = None,
@@ -169,7 +215,7 @@ class MDTrajectory:
         if None not in (frag_id, iframe, trajectory):
             return trajectory[frag_id]['geometries'][iframe]
         else:
-            print("Parameters are not specified correctly!")
+            raise ValueError("Parameters are not specified correctly!")
 
     def save_trajectory(self, frag_id, frames: list = None,
                       geometries: np.ndarray = None,
@@ -190,10 +236,10 @@ class MDTrajectory:
         if frames is None:
             frames = range(self.nframes)
         atoms = self.trajectory[frag_id]['elements']
-        natoms = len(atoms)
         # Getting Elements from Topology and XYZ from outside
         with open(fname+"_"+str(frag_id)+'.xyz', 'w') as fout:
             for iframe in frames:
+                natoms = len(atoms[iframe])
                 fout.write(str(natoms)+'\n')
                 fout.write(str('Frame '+str(iframe)+'\n'))
                 if geometries is None:
@@ -202,20 +248,19 @@ class MDTrajectory:
                     coords = geometries[iframe]
                 for iline in range(natoms):
                     line = ' '.join(coords[iline].astype(str))
-                    fout.write(str(atoms[iline])+' '+line+' '+str(frag_id)+'\n')
+                    fout.write(str(atoms[iframe][iline])+' '+line+' '+str(frag_id)+'\n')
 
     @staticmethod
     def save_snapshot(frag_id: int, iframe: int, elements: np.ndarray,
                       geometry: np.ndarray, basename: str='snapshot'):
         """Save the geometry of a fragment for one single snapshot."""
-        print("saving_snapshot")
-        natoms = len(elements)
+        natoms = len(elements[iframe])
         with open(basename+"_"+str(frag_id)+'.xyz', 'w') as fout:
             fout.write(str(natoms)+'\n')
             fout.write(str('Frame '+str(iframe)+'\n'))
             for iline in range(natoms):
                 line = ' '.join(geometry[iline].astype(str))
-                fout.write(str(elements[iline])+' '+line+' '+str(frag_id)+'\n')
+                fout.write(str(elements[iframe][iline])+' '+line+' '+str(frag_id)+'\n')
 
     @staticmethod
     def align(current: np.ndarray, reference: np.ndarray):
@@ -329,19 +374,19 @@ class MDTrajectory:
                     elements = self.trajectory[frag_id]["uniques"]
                 else:
                     elements = self.trajectory[frag_id]["elements"]
-                elen = len(elements)
-                elements = elements.reshape((elen, 1))
                 xyz_traj = self.trajectory[frag_id]["geometries"]
                 for iframe in range(self.nframes):
                     # Translate to centroid
                     xyz = xyz_traj[iframe] - align_info[iframe][2]
+                    elen = len(elements[iframe])
+                    ielements = elements[iframe].reshape((elen, 1))
                     # Rotate geometry
                     np.dot(xyz, align_info[iframe][1], out=xyz)
-                    coords.append(np.append(elements, xyz, axis=1))
+                    coords.append(np.append(ielements, xyz, axis=1))
                     clen += elen
         # Make array with coordinates
         coords = np.array(coords).reshape((clen, 4))
-        for ielement in set(self.elements):
+        for ielement in set(self.uniques):
             indices = np.where(coords[:, 0] == ielement)[0]
             # Collecting all coordinates through all frames for a given element ielement
             coordinates = coords[indices, 1:].astype('float64')

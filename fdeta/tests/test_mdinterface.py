@@ -16,7 +16,7 @@ def test_mdinterface_base():
     """Test to initialize `MDInterface`."""
     # Define variables to break code
     dic = os.getenv('FDETADATA')
-    traj = os.path.join(dic, 'test_traj.xyz')
+    traj = os.path.join(dic, 'test_traj.fde')
     box_size = np.array([4, 4, 4])
     grid_size = (10, 10, 10)
     ta = MDTrajectory(traj)
@@ -35,7 +35,7 @@ def test_mdinterface_histogram():
     """Test to initialize `MDInterface`."""
     # Define variables to break code
     dic = os.getenv('FDETADATA')
-    traj = os.path.join(dic, 'test_traj.xyz')
+    traj = os.path.join(dic, 'test_traj.fde')
     box_size = np.array([10, 10, 10])
     grid_size = (10, 10, 10)
     ta = MDTrajectory(traj)
@@ -44,7 +44,8 @@ def test_mdinterface_histogram():
     assert (mdi.delta == 1.0).all()
     ccoeffs = {'O': 1.1, 'H': 0.6}
     rho = mdi.get_elec_density(ccoeffs)
-    assert np.sum(rho)/2 == -20
+    # Not normalized after! assert np.sum(rho)/2 == -20
+    assert np.sum(rho)/2 == -10  # New version
     gridname = os.path.join(dic, 'grid_vemb.dat')
     mdi.compute_electrostatic_potential(ccoeffs, gridname)
     elst = np.loadtxt('elst_pot.txt')
@@ -56,7 +57,7 @@ def test_mdinterface_acetone_w2():
     """Test  `MDInterface`."""
     # Define variables
     dic = os.getenv('FDETADATA')
-    traj = os.path.join(dic, 'traj_acetone_w2.xyz')
+    traj = os.path.join(dic, 'traj_acetone_w2.fde')
     box_size = np.array([10, 10, 10])
     grid_size = (15, 15, 15)
     ta = MDTrajectory(traj)
@@ -89,4 +90,4 @@ def test_mdinterface_acetone_w2():
 if __name__ == "__main__":
     test_mdinterface_base()
     test_mdinterface_histogram()
-    test_mdinterface_acetone_w2()
+#   test_mdinterface_acetone_w2()

@@ -80,7 +80,8 @@ def read_cubefile(fname: str):
 def write_cube(atoms: np.ndarray, coords: np.ndarray,
                origin: np.ndarray, vectors: np.ndarray,
                gridshape: tuple, values: Union[list, np.ndarray],
-               fname: str, comment: str = None):
+               fname: str, comment: str = None,
+               gauss_style: bool = False):
     """Write cubefile in Gaussian format.
 
     Parameters
@@ -98,6 +99,9 @@ def write_cube(atoms: np.ndarray, coords: np.ndarray,
         then x.
     comment :  str
         First two lines of the cubefile.
+    gauss_style : bool
+        Whether to print the values at each point as in Gaussian
+        (5 values per line). False option prints each value per line.
 
     """
     if comment is None:
@@ -121,10 +125,13 @@ def write_cube(atoms: np.ndarray, coords: np.ndarray,
             output.write(satoms.format(numbers[i], 0.0, coords[i, 0],
                                        coords[i, 1], coords[i, 2]))
         for n, value in enumerate(values):
-            if (n+1) % 6 == 0 or n == len(values)-1:
-                output.write("{:12.6e}\n".format(value))
+            if gauss_style:
+                if (n+1) % 6 == 0 or n == len(values)-1:
+                    output.write("{:12.6e}\n".format(value))
+                else:
+                    output.write("{:12.6e} ".format(value))
             else:
-                output.write("{:12.6e} ".format(value))
+                output.write("{:12.6e}\n".format(value))
 
 
 def make_cubic_grid(grid_shape: tuple, vectors: np.ndarray,

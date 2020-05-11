@@ -22,12 +22,12 @@ class BoxGrid {
 
         BoxGrid(py::array_t<int, py::array::c_style> grid_size,
                 py::array_t<double, py::array::c_style> edges);
-        virtual void electrostatic_potential(int npoints, int nframes, const char *ofname,
+        virtual void electrostatic_potential(int npoints, const char *ofname,
                                              py::array_t<double, py::array::c_style> chargedens,
                                              py::array_t<double, py::array::c_style> extgrid);
         virtual py::array_t<double> get_grid(py::array_t<double, py::array::c_style> grid,
                                              bool corder);
-        virtual py::array_t<double> normalize(int length, int nframes,
+        virtual py::array_t<double> normalize(int length,
                                               py::array_t<double, py::array::c_style> values,
                                               bool corder);
         virtual void save_grid(int grid_length, const char *fname);
@@ -157,11 +157,10 @@ void BoxGrid::save_grid(int grid_length, const char *fname){
  * \brief Normalize values from histrogram in xyz (grid in bohr).
  *
  * \param length      Total length of grid.
- * \param nframes     Total number of frames from MD.
  * \param values      Values of Rhob from histogram, in Angstrom.
  * \param corder  Wheter to use C or Histrogram order.
  */
-py::array_t<double> BoxGrid::normalize(int length, int nframes,
+py::array_t<double> BoxGrid::normalize(int length,
                                       py::array_t<double, py::array::c_style> values,
                                       bool corder=false){
     // Get the information from python objects
@@ -187,7 +186,7 @@ py::array_t<double> BoxGrid::normalize(int length, int nframes,
                     cresult[count] = cgrid[gcount]/BOHR;
                     cresult[count+1] = cgrid[gcount+1]/BOHR;
                     cresult[count+2] = cgrid[gcount+2]/BOHR;
-                    cresult[count+3] = cvals[i*ny*nz+j*nz+k]/nframes;
+                    cresult[count+3] = cvals[i*ny*nz+j*nz+k];
                     gcount += 3;
                     count += 4;
                 }
@@ -201,7 +200,7 @@ py::array_t<double> BoxGrid::normalize(int length, int nframes,
                     cresult[count] = cgrid[gcount]/BOHR;
                     cresult[count+1] = cgrid[gcount+1]/BOHR;
                     cresult[count+2] = cgrid[gcount+2]/BOHR;
-                    cresult[count+3] = cvals[k*ny*nx+j*nx+i]/nframes;
+                    cresult[count+3] = cvals[k*ny*nx+j*nx+i];
                     gcount += 3;
                     count += 4;
                 }
@@ -217,12 +216,11 @@ py::array_t<double> BoxGrid::normalize(int length, int nframes,
  * \brief Evaluate electrostatic potential and save it on file.
  *
  * \param npoints           Total number of grid points.
- * \param nframes           Total number of frames from MD.
  * \param ofname            File name where the potential is saved.
  * \param chargedens        Values of total charge density from histogram, in Angstrom.
  * \param extgrid           External grid where the potential is evaluated, in Bohr.
  */
-void BoxGrid::electrostatic_potential(int npoints, int nframes, const char *ofname,
+void BoxGrid::electrostatic_potential(int npoints, const char *ofname,
                                       py::array_t<double, py::array::c_style> chargedens,
                                       py::array_t<double, py::array::c_style> extgrid){
     // Get the information from python objects

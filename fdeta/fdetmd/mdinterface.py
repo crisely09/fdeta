@@ -8,6 +8,7 @@ import numpy as np
 import scipy as sp
 from typing import Union
 from fdeta.fdetmd.cgrid_tools import BoxGrid
+from fdeta.traj_tools import atom_to_charge, clean_atom_name
 from fdeta.mdtrajectory import MDTrajectory
 from fdeta.fdetmd.interpolate import interpolate_function
 from fdeta.cube import write_cube
@@ -51,11 +52,14 @@ class MDInterface:
 
         """
         self.ta_object = ta_object
+        if hasattr(ta_object, 'charges'):
+            self.charges = ta_object.charges
         histogram_range = np.asarray([-box_size/2., box_size/2.]).T
         # Save aligned fragment to file
         self.ta_object.align_along_trajectory(frag_id, to_file=True)
         if average_solute:
-            self.ta_object.get_average_structure(frag_id)
+            # TODO: call Nico's code
+            raise NotImplementedError("Work in progress.")
         # Align solvent and find the averaged structure
         edges, self.pcf = self.ta_object.compute_pair_correlation_function(histogram_range,
                                                                            grid_size, frag_id)
@@ -92,7 +96,8 @@ class MDInterface:
         """ Save the pcf to file."""
         raise NotImplementedError
 
-    def get_elec_density(self, charge_coeffs: dict, ingrid: bool = False):
+    def get_elec_density(self, charge_coeffs: dict = None,
+                         solv_id : int = 1, ingrid: bool = False):
         """ Evaluate the electronic density of the solvent.
 
         Parameters
@@ -110,15 +115,31 @@ class MDInterface:
 
         """
         rhocube = None
-        for ielement in charge_coeffs:
-            if rhocube is None:
-                rhocube = (-charge_coeffs[ielement]*self.ta_object.charges[ielement][1]
-                           * self.pcf[ielement])
+        if charge_coeffs is None:
+            # Use information from trajectory
+            if not hasattr(self, 'charges'):
+                raise ValueError("""No information about charges in trajectory object, """
+                                 """`charge_coeffs` dictionary must be provided.""")
             else:
-                rhocube -= (charge_coeffs[ielement]*self.ta_object.charges[ielement][1]
-                            * self.pcf[ielement])
+                charge_coeffs = {}
+                for element in self.charges:
+                    eff_charge = charges[element]
+                    zcharge = atom_to_charge(clean_atom_name(element))
+                    if eff_charge > 0:
+                        charge_coeffs[element] = (zcharge - eff_charge)/zcharge
+                    else:
+                        charge_coeffs[element] = (zcharge + abs(eff_charge))/zcharge
+        for ielement in charge_coeffs:
+            zcharge = atom_to_charge(clean_atom_name(ielement))
+            if rhocube is None:
+                rhocube = (-charge_coeffs[ielement]*zcharge
+                           * self.pcf[ielement] / self.ta_object.eframes[ielement])
+            else:
+                rhocube -= (charge_coeffs[ielement]*zcharge
+                            * self.pcf[ielement] / self.ta_object.eframes[ielement])
+        # Return with grid coordinates
         if ingrid:
-            rhob = self.pbox.normalize(self.npoints*4, self.total_frames, rhocube, False)
+            rhob = self.pbox.normalize(self.npoints*4, rhocube, False)
             rhob = np.reshape(rhob, (self.npoints, 4))
             dv = self.delta[0][0] * self.delta[1][0] * self.delta[2][0]
             rhob[:, 3] /= dv
@@ -146,13 +167,15 @@ class MDInterface:
         """
         nuclei = None
         for ielement in self.pcf:
+            zcharge = atom_to_charge(clean_atom_name(ielement))
             if nuclei is None:
-                nuclei = self.ta_object.charges[ielement][1]*self.pcf[ielement]
+                nuclei = (zcharge*self.pcf[ielement]
+                          /self.ta_object.eframes[ielement])
             else:
-                nuclei += self.ta_object.charges[ielement][1]*self.pcf[ielement]
+                nuclei += (zcharge*self.pcf[ielement]
+                           /self.ta_object.eframes[ielement])
         if ingrid:
-            nuc_charges = self.pbox.normalize(self.npoints*4, self.total_frames,
-                                              nuclei, False)
+            nuc_charges = self.pbox.normalize(self.npoints*4, nuclei, False)
             nuc_charges = np.reshape(nuc_charges, (self.npoints, 4))
             dv = self.delta[0][0] * self.delta[1][0] * self.delta[2][0]
             nuc_charges[:, 3] /= dv
@@ -221,14 +244,14 @@ class MDInterface:
         """
         net_density = self.get_elec_density(charge_coeffs)
         net_density += self.get_nuclear_density()
-        charge_density = self.pbox.normalize(self.npoints*4, self.total_frames, net_density,
+        charge_density = self.pbox.normalize(self.npoints*4, net_density,
                                              False)
 
         fingrid = check_grid(fingrid)
         # Clean the weights from grid to leave space for the potential
         fingrid[:, 3] = 0.0
-        self.pbox.electrostatic_potential(self.npoints, self.total_frames,
-                                          fname, charge_density, fingrid)
+        self.pbox.electrostatic_potential(self.npoints, fname,
+                                          charge_density, fingrid)
 
     def export_cubefile(self, frag_id, geometry: Union[int, np.ndarray],
                         values: np.ndarray, is_sorted: bool = False,
