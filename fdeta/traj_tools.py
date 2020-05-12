@@ -29,13 +29,27 @@ def default_charges(elements: list) -> dict:
     """Get the default charges for a list of given elements."""
     charges = {}
     for i, atom in enumerate(elements):
-        charges[atom] = atom_to_charge(clean_atom_name(atom))
+        charges[atom] = atom_to_charge(atom)
     return charges
+
+
+def flatten_list(chain_list: list) -> list:
+    """Flatten recursively a list."""
+    is_1d = all(not isinstance(x, list) for x in chain_list)
+    if is_1d:
+        return chain_list
+    flat_list = []
+    for sublist in chain_list:
+        if isinstance(sublist, list):
+            flat_list += flatten_list(sublist)
+        else:
+            flat_list += [sublist]
+    return flat_list
 
 
 def find_unique_elements(elements: list) -> list:
     """Find unique elements of a list."""
-    flat_list = [item for sublist in elements for item in sublist]
+    flat_list = flatten_list(elements)
     uniques = list(set(flat_list))
     return uniques
 
@@ -89,6 +103,8 @@ def get_data_lines(files: Union[str, list]):
             with open(fname, 'r') as finp:
                 lines = finp.readlines()
                 data += lines
+    else:
+        raise TypeError("`files` must be either list or str")
     return data
 
 
