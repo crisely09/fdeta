@@ -182,8 +182,44 @@ def read_pqr_trajectory(files: Union[str, list]) -> dict:
     return geos
 
 
-def read_gromacs_trajectory(files: Union[str, list]) -> dict:
-    raise NotImplementedError("Work in progress")
+def read_gromacs_trajectory(files: Union[str, list],
+                            solute: Union[list, np.ndarray]) -> dict:
+    """Read info from one or multiple files.
+
+    Parameters
+    ----------
+    files :  str or list(str)
+        File or list of files to read.
+    solute : list or np.ndarray
+        Indices of the solute fragment
+
+    Returns
+    -------
+    data : dict
+        All data of trajectory in `elements`, `geometries`
+        and `ids`.
+
+    """
+    import MDAnalysis
+    files = tuple(files)
+    u = MDAnalysis.Universe(*files)
+    elements = u.atoms.names
+    natoms = elements.size
+    elements = [clean_atom_name(e) for e in elements]
+    nframes = len(u.trajectory)
+    geometries = []
+    elements_all = []
+    ids = []
+    id_tmp = [0 if i in solute else 1 for i in range(natoms)]
+    for nf in range(nframes):
+        xyz = u.trajectory[nf].positions
+        geometries.append(xyz)
+        elements_all.append(elements)
+        ids.append(id_tmp)
+        
+    # Define dictionary
+    data = dict(elements=elements_all, geometries=geometries, ids=ids)
+    return data
 
 
 def data_from_file(filename:str) -> dict:

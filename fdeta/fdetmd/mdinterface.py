@@ -142,9 +142,11 @@ class MDInterface:
             else: 
                 zcharge = atom_to_charge(clean_atom_name(ielement))
             if rhocube is None:
+                print("Number of frames for %s: " % ielement, self.ta_object.eframes[ielement])
                 rhocube = (-charge_coeffs[ielement]*zcharge
                            * self.pcf[ielement] / self.ta_object.eframes[ielement])
             else:
+                print("Number of frames for %s: " % ielement, self.ta_object.eframes[ielement])
                 rhocube -= (charge_coeffs[ielement]*zcharge
                             * self.pcf[ielement] / self.ta_object.eframes[ielement])
         # Return with grid coordinates

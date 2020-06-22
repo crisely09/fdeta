@@ -166,3 +166,48 @@ def make_cubic_grid(grid_shape: tuple, vectors: np.ndarray,
     ziplist = list(zip(yv, xv, zv))
     grid3d = np.array(ziplist)
     return grid3d
+
+
+def make_grid_from_data(data: dict):
+    """Make a cubic grid from the grid data.
+
+    Parameters
+    ----------
+    data : dict
+        Information of the data on cubefile format.
+
+    Returns
+    -------
+    grid3d : np.ndarray((N, 3))
+        3D cubic grid.
+    """
+    grid_shape = data['grid_shape']
+    vectors = data['vectors']
+    origin = data['origin']
+    return make_cubic_grid(grid_shape, vectors, origin)
+
+
+def check_data_same_cube(data0, data1):
+    """Check if two sets of data from cubicfiles contain
+       the same grid.
+
+    Parameters
+    ----------
+    data0, data1 :  dict
+        Information of the cubefiles.
+
+    Raises
+    ------
+    ValueError:
+        When data does not contain exact same information
+    """
+    if data0['elements'] != data1['elements']:
+        raise ValueError('`elements` of each cubefile are different.')
+    if not np.allclose(data0['coords'], data1['coords']):
+        raise ValueError('`coords` of each cubefile are different.')
+    if data0['grid_shape'] != data1['grid_shape']:
+        raise ValueError('`grid_shape` of each cubefile are different.')
+    if not np.allclose(data0['origin'], data1['origin']):
+        raise ValueError('`origin` of each cubefile are different.')
+    if not np.allclose(data0['vectors'], data1['vectors']):
+        raise ValueError('`vectors` of each cubefile are different.')

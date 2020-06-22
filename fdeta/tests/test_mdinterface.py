@@ -7,6 +7,7 @@ Unit and regression test for the fdeta package.
 import os
 import numpy as np
 
+from fdeta.traj_tools import data_from_file
 from fdeta.mdtrajectory import MDTrajectory
 from fdeta.fdetmd.mdinterface import MDInterface
 from fdeta.fdetmd.dft import compute_nad_lda_all
@@ -19,7 +20,8 @@ def test_mdinterface_base():
     traj = os.path.join(dic, 'test_traj.fde')
     box_size = np.array([4, 4, 4])
     grid_size = (10, 10, 10)
-    ta = MDTrajectory(traj)
+    data = data_from_file(traj) 
+    ta = MDTrajectory(data)
     mdi = MDInterface(ta, box_size, grid_size)
     mdi.save_grid()
     ref_edges = [np.array([-1.8, -1.4, -1., -0.6, -0.2, 0.2, 0.6, 1., 1.4, 1.8]),
@@ -38,7 +40,8 @@ def test_mdinterface_histogram():
     traj = os.path.join(dic, 'test_traj.fde')
     box_size = np.array([10, 10, 10])
     grid_size = (10, 10, 10)
-    ta = MDTrajectory(traj)
+    data = data_from_file(traj) 
+    ta = MDTrajectory(data)
     mdi = MDInterface(ta, box_size, grid_size)
     mdi.save_grid('second_text.txt')
     assert (mdi.delta == 1.0).all()
@@ -62,7 +65,8 @@ def test_mdinterface_histogram_with_charges():
     cfile = os.path.join(dic, 'test_charges.txt')
     box_size = np.array([10, 10, 10])
     grid_size = (10, 10, 10)
-    ta = MDTrajectory(traj, cfile)
+    data = data_from_file(traj) 
+    ta = MDTrajectory(data, cfile)
     mdi = MDInterface(ta, box_size, grid_size)
     mdi.save_grid('second_text.txt')
     assert (mdi.delta == 1.0).all()
@@ -87,7 +91,8 @@ def test_mdinterface_with_heteroatoms():
     grid_size = (10, 10, 10)
     heteroatoms = ['K', 'Ca', 'Cl']
     point = np.array([[0.124, 3.049, 2.987, 0.000]])
-    ta = MDTrajectory(traj, cfile)
+    data = data_from_file(traj) 
+    ta = MDTrajectory(data, cfile)
     mdi = MDInterface(ta, box_size, grid_size, heteroatoms=heteroatoms)
     # Get charge density
     rho = mdi.get_elec_density(ingrid=True)
@@ -108,7 +113,8 @@ def test_mdinterface_acetone_w2():
     traj = os.path.join(dic, 'traj_acetone_w2.fde')
     box_size = np.array([10, 10, 10])
     grid_size = (15, 15, 15)
-    ta = MDTrajectory(traj)
+    data = data_from_file(traj) 
+    ta = MDTrajectory(data)
     mdi = MDInterface(ta, box_size, grid_size)
     mdi.save_grid()
     gridname = os.path.join(dic, 'grid_vemb_acetone.dat')

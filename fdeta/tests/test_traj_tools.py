@@ -111,10 +111,14 @@ def test_read_pqr_trajectory():
     return
 
 
-def test_gromacs_trajectory():
+def gromacs_trajectory():
     """Function to read gromacs files."""
-    with pytest.raises(NotImplementedError):
-        read_gromacs_trajectory('Something')
+    dic = os.getenv('FDETADATA')
+    fgro = os.path.join(dic, 'ace_mdft_spce.gro')
+    ftrr = os.path.join(dic, 'ace_mdft_spce.trr')
+    files = [fgro, ftrr]
+    solute = range(10)
+    data = read_gromacs_trajectory(files, solute)
 
 
 def test_data_from_file():
@@ -158,3 +162,4 @@ if __name__ == "__main__":
     test_clean_atom_name()
     test_read_xyz_trajectory()
     test_data_from_file()
+#   test_gromacs_trajectory()

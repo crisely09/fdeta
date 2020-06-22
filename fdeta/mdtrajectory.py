@@ -37,24 +37,23 @@ class MDTrajectory:
             {frag_id: {geometries:3D ndarray, elements: ndarray(str), uniques: ndarray(str)}}
 
     """
-    def __init__(self, traj_file: str, charges_file: str = None):
+    def __init__(self, data: dict, charges_file: str = None, use_aligned=True):
         """
         Read trajectory and trajectory from the files 'name' and 'trajectory'.
 
         Parameters
         ----------
-        traj_file :
-            Name of the trajectory file. The `.fde` format
-            is the extended `.xyz` with frament IDs:
-            'number of atoms
-             number of frame
-             element  X Y Z fragment_ID'
+        data : dict
+            Data from trajectory read with one of the tools in traj_tools module.
+            Dictionary must contain 'elements', 'geometries', and 'ids' if more than
+            one fragment is given.
         charges_file :
             Name of file with charges for each atom.
 
         """
+        self.use_aligned = use_aligned
         # Save trajectory info
-        data = data_from_file(traj_file)
+        # data = data_from_file(traj_file)
         if 'ids' in data:
             unique_ids = find_unique_elements(data['ids'])
             unique_ids = [int(u) for u in unique_ids]
@@ -237,7 +236,7 @@ class MDTrajectory:
             frames = range(self.nframes)
         atoms = self.trajectory[frag_id]['elements']
         # Getting Elements from Topology and XYZ from outside
-        with open(fname+"_"+str(frag_id)+'.xyz', 'w') as fout:
+        with open(fname+"_"+str(frag_id)+'.fde', 'w') as fout:
             for iframe in frames:
                 natoms = len(atoms[iframe])
                 fout.write(str(natoms)+'\n')
@@ -253,14 +252,28 @@ class MDTrajectory:
     @staticmethod
     def save_snapshot(frag_id: int, iframe: int, elements: np.ndarray,
                       geometry: np.ndarray, basename: str='snapshot'):
-        """Save the geometry of a fragment for one single snapshot."""
-        natoms = len(elements[iframe])
-        with open(basename+"_"+str(frag_id)+'.xyz', 'w') as fout:
+        """Save the geometry of a fragment for one single snapshot.
+
+        Parameters
+        ----------
+        frag_id : int
+            Id of the fragment to use.
+        iframe : int
+            Frame number to save.
+        elements : list
+            Names of elements in the fragment.
+        geometry :  np.ndarray
+            Geometry of the fragment in 3d coordinates.
+        basename : str
+            Base name of file where the snapshot is saved.
+        """
+        natoms = len(elements)
+        with open(basename+"_"+str(frag_id)+'.fde', 'w') as fout:
             fout.write(str(natoms)+'\n')
             fout.write(str('Frame '+str(iframe)+'\n'))
             for iline in range(natoms):
                 line = ' '.join(geometry[iline].astype(str))
-                fout.write(str(elements[iframe][iline])+' '+line+' '+str(frag_id)+'\n')
+                fout.write(str(elements[iline])+' '+line+' '+str(frag_id)+'\n')
 
     @staticmethod
     def align(current: np.ndarray, reference: np.ndarray):
@@ -309,7 +322,7 @@ class MDTrajectory:
         else:
             return alignment
 
-    def get_average_structure(self, frag_id: int, method: str = 'zmat'):
+    def get_average_structure(self, frag_id: int, method: str = 'zmat', to_file: bool = True):
         """ Given a subsystem,  computes its average structure along the trajectory.
 
         Arguments
@@ -332,14 +345,18 @@ class MDTrajectory:
                 geos.append(align_info[iframe][0])
             geos = np.array(geos)
             structure_averaged = np.mean(geos, axis=0)
-            elements = self.trajectory[frag_id]['elements']
-            self.save_snapshot(frag_id, 0, elements, structure_averaged)
+            elements = self.trajectory[frag_id]['elements'][0]
+            if to_file:
+                self.save_snapshot(frag_id, 0, elements, structure_averaged)
+            else:
+                return elements, structure_averaged
+            
 
     def compute_pair_correlation_function(self, box_range: tuple, bins: Union[list, np.ndarray],
                                           solute_id=0):
         """ Given the method computes the pair correlation function (pcf)
         for the solvent fragments in 3 steps:
-        a) Get aligned information of solute (centroids and rotation matrices)
+        a) If required get aligned information of solute (centroids and rotation matrices)
         b) Find elements that belong to the solvent
         c) splitting space by bins and measuring the number of a certain type atoms in each
         Should the pcf be computed only for solute molecule
@@ -362,28 +379,48 @@ class MDTrajectory:
         self.pcf = {}
         coords = []
         clen = 0
-        # Align all structures for solvent fragments
-        # First get alignment from solute
-        if solute_id in self.aligned:
-            align_info = self.aligned[solute_id]
+        # If alignment requiered
+        if self.use_aligned:
+            # Align all structures for solvent fragments
+            # First get alignment from solute
+            if solute_id in self.aligned:
+                align_info = self.aligned[solute_id]
+            else:
+                align_info = self.align_along_trajectory(solute_id)
+            for i, frag_id in enumerate(self.frags):
+                if frag_id != solute_id:
+                    if "uniques" in self.trajectory[frag_id]:
+                        elements = self.trajectory[frag_id]["uniques"]
+                    else:
+                        elements = self.trajectory[frag_id]["elements"]
+                    xyz_traj = self.trajectory[frag_id]["geometries"]
+                    for iframe in range(self.nframes):
+                        # Translate to centroid
+                        xyz = xyz_traj[iframe] - align_info[iframe][2]
+                        elen = len(elements[iframe])
+                        ielements = elements[iframe].reshape((elen, 1))
+                    #   # Rotate geometry
+                    #   np.dot(xyz, align_info[iframe][1], out=xyz)
+                        coords.append(np.append(ielements, xyz, axis=1))
+                        clen += elen
         else:
-            align_info = self.align_along_trajectory(solute_id)
-        for i, frag_id in enumerate(self.frags):
-            if frag_id != solute_id:
-                if "uniques" in self.trajectory[frag_id]:
-                    elements = self.trajectory[frag_id]["uniques"]
-                else:
-                    elements = self.trajectory[frag_id]["elements"]
-                xyz_traj = self.trajectory[frag_id]["geometries"]
-                for iframe in range(self.nframes):
-                    # Translate to centroid
-                    xyz = xyz_traj[iframe] - align_info[iframe][2]
-                    elen = len(elements[iframe])
-                    ielements = elements[iframe].reshape((elen, 1))
-                    # Rotate geometry
-                    np.dot(xyz, align_info[iframe][1], out=xyz)
-                    coords.append(np.append(ielements, xyz, axis=1))
-                    clen += elen
+            # Just take geometries from input
+            for i, frag_id in enumerate(self.frags):
+                if frag_id != solute_id:
+                    if "uniques" in self.trajectory[frag_id]:
+                        elements = self.trajectory[frag_id]["uniques"]
+                    else:
+                        elements = self.trajectory[frag_id]["elements"]
+                    xyz_traj = self.trajectory[frag_id]["geometries"]
+                    for iframe in range(self.nframes):
+                        # Translate to centroid
+                        xyz = xyz_traj[iframe]
+                        elen = len(elements[iframe])
+                        ielements = elements[iframe].reshape((elen, 1))
+                        # Rotate geometry
+                        coords.append(np.append(ielements, xyz, axis=1))
+                        clen += elen
+
         # Make array with coordinates
         coords = np.array(coords).reshape((clen, 4))
         for ielement in set(self.uniques):
