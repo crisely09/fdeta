@@ -27,7 +27,7 @@ class BoxGrid {
                                              py::array_t<double, py::array::c_style> extgrid);
         virtual py::array_t<double> get_grid(py::array_t<double, py::array::c_style> grid,
                                              bool corder);
-        virtual py::array_t<double> normalize(int length,
+        virtual py::array_t<double> expand(int length,
                                               py::array_t<double, py::array::c_style> values,
                                               bool corder);
         virtual void save_grid(int grid_length, const char *fname);
@@ -154,13 +154,13 @@ void BoxGrid::save_grid(int grid_length, const char *fname){
 }
 
 /*
- * \brief Normalize values from histrogram in xyz (grid in bohr).
+ * \brief Expand values from histrogram in xyz grid (in bohr).
  *
  * \param length      Total length of grid.
  * \param values      Values of Rhob from histogram, in Angstrom.
  * \param corder  Wheter to use C or Histrogram order.
  */
-py::array_t<double> BoxGrid::normalize(int length,
+py::array_t<double> BoxGrid::expand(int length,
                                       py::array_t<double, py::array::c_style> values,
                                       bool corder=false){
     // Get the information from python objects
@@ -247,7 +247,7 @@ void BoxGrid::electrostatic_potential(int npoints, const char *ofname,
             r1[2] = cvals[i+count+2];
             d = distance(r0, r1);
             // avoid very short distances
-            if (d > 1e-6){
+            if (d > 1e-8){
                 cresult[j+vcount+3] += cvals[i+count+3]/d;
             }
             count += 3;
@@ -281,6 +281,6 @@ PYBIND11_MODULE(cgrid_tools, m){
           .def(py::init<py::array_t<int>, py::array_t<double>>())
           .def("electrostatic_potential", &BoxGrid::electrostatic_potential)
           .def("get_grid", &BoxGrid::get_grid)
-          .def("normalize", &BoxGrid::normalize)
+          .def("expand", &BoxGrid::expand)
           .def("save_grid", &BoxGrid::save_grid);
 }

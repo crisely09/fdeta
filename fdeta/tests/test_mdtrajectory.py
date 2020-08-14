@@ -19,6 +19,17 @@ def test_base():
     edges, pcf = ta.compute_pair_correlation_function(histogram_range, grid_size, 0)
     assert len(np.where(pcf['O'] > 0)[0]) == 4
     assert len(np.where(pcf['H'] > 0)[0]) == 8
+    # Test saving correct geometries
+    h2o_iframe = ta.get_structure_from_trajectory(1, 1, ta.trajectory)
+    h2o_wrong = ta.get_structure_from_trajectory(1, 0, ta.trajectory)
+    ref = np.array([[0.823616466, 2.2301171341, -3.0272218672],
+           [0.8802243553, 0.8879174165, -3.7245599666],
+           [0.254821451, -1.3338434534, -5.1694547009],       
+           [1.2650984606, -1.5274583661, -4.0591220527],        
+           [1.2041949721, 1.7865317894, -3.7852022645],
+           [0.4788450611, -1.0324072555, -4.2890616746]])
+    assert np.allclose(h2o_iframe, ref)
+    assert np.allclose(h2o_wrong, ref)
 
 
 def test_files():

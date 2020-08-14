@@ -157,7 +157,16 @@ def make_cubic_grid(grid_shape: tuple, vectors: np.ndarray,
     for i in range(3):
         steps = grid_shape[i]
         size = vectors[i, i]
-        axis.append(np.arange(origin[i], origin[i]+steps*size, size))
+        beg = origin[i]
+        end = beg + steps*size
+        vector = np.arange(beg, end, size)
+        lvec = len(vector)
+        if lvec != steps:
+            if lvec < steps:
+                vector = np.arange(beg, end+size, size)
+            else:
+                vector = np.arange(beg, end-size, size)
+        axis.append(vector)
 
     xv, yv, zv = np.meshgrid(axis[0], axis[1], axis[2])
     xv = xv.reshape((xv.size,))

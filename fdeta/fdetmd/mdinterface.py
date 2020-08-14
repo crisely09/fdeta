@@ -57,6 +57,11 @@ class MDInterface:
         if hasattr(ta_object, 'charges'):
             self.charges = ta_object.charges
         histogram_range = np.asarray([-box_size/2., box_size/2.]).T
+        print('histogram_range', histogram_range)
+     #  histogram_range = np.zeros((3, 2))
+     #  for axis in range(3):
+     #      histogram_range[axis, 1] = box_size[axis]
+     #  print(histogram_range)
         # Save aligned fragment to file
         self.ta_object.align_along_trajectory(frag_id, to_file=True)
         if average_solute:
@@ -67,6 +72,7 @@ class MDInterface:
                                                                            grid_size, frag_id)
         self.grid_size = grid_size
         self.npoints = np.cumprod(grid_size)[-1]
+        print('self.npoints', self.npoints)
         self.delta = sp.diff(edges)
         edges = np.array(edges)
         # NOTE: only works for cubic grids
@@ -151,7 +157,7 @@ class MDInterface:
                             * self.pcf[ielement] / self.ta_object.eframes[ielement])
         # Return with grid coordinates
         if ingrid:
-            rhob = self.pbox.normalize(self.npoints*4, rhocube, False)
+            rhob = self.pbox.expand(self.npoints*4, rhocube, False)
             rhob = np.reshape(rhob, (self.npoints, 4))
             dv = self.delta[0][0] * self.delta[1][0] * self.delta[2][0]
             rhob[:, 3] /= dv
@@ -191,7 +197,7 @@ class MDInterface:
                 nuclei += (zcharge*self.pcf[ielement]
                            /self.ta_object.eframes[ielement])
         if ingrid:
-            nuc_charges = self.pbox.normalize(self.npoints*4, nuclei, False)
+            nuc_charges = self.pbox.expand(self.npoints*4, nuclei, False)
             nuc_charges = np.reshape(nuc_charges, (self.npoints, 4))
             dv = self.delta[0][0] * self.delta[1][0] * self.delta[2][0]
             nuc_charges[:, 3] /= dv
@@ -246,6 +252,39 @@ class MDInterface:
         interpolated = interpolate_function(refgrid, values, fingrid, function)
         return interpolated
 
+    def compute_electrostatic_potential_direct(self, fingrid: Union[str, np.ndarray],
+                                               charge_coeffs: dict = None):
+        """ Evaluate and save electrostatic potential.
+
+        Parameters
+        ----------
+        fingrid : str or array
+            New set of points for the interpolation.
+            This grid must be in Bohr!
+
+        Returns
+        -------
+        fingrid : np.array
+            Grid with coordinates and electrostatic potential (Npoints, 4).
+        """
+        # First get the net_density
+        net_density = self.get_elec_density(charge_coeffs)
+        net_density += self.get_nuclear_density()
+        # Get whole grid
+        charge_density = self.pbox.expand(self.npoints*4, net_density,
+                                          False)
+        charge_density = np.reshape(charge_density, (self.npoints, 4))
+
+        fingrid = check_grid(fingrid)
+        # Clean the weights from grid to leave space for the potential
+        fingrid[:, 3] = 0.0
+        for i in range(len(fingrid)):
+            for j in range(len(charge_density)):
+                d = np.linalg.norm(charge_density[j, :3] - fingrid[i, :3])
+                if d > 1e-6:
+                    fingrid[i, 3] += charge_density[j, 3]/d
+        return fingrid
+
     def compute_electrostatic_potential(self, fingrid: Union[str, np.ndarray],
                                        charge_coeffs: dict = None,
                                        fname: str = 'elst_pot.txt'):
@@ -253,16 +292,17 @@ class MDInterface:
 
         Parameters
         ----------
-        gridname : str
+        fingrid : str or array
             New set of points for the interpolation.
             This grid must be in Bohr!
 
         """
         net_density = self.get_elec_density(charge_coeffs)
         net_density += self.get_nuclear_density()
-        charge_density = self.pbox.normalize(self.npoints*4, net_density,
+        charge_density = self.pbox.expand(self.npoints*4, net_density,
                                              False)
 
+        charge_density = np.reshape(charge_density, (self.npoints, 4))
         fingrid = check_grid(fingrid)
         # Clean the weights from grid to leave space for the potential
         fingrid[:, 3] = 0.0

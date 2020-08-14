@@ -399,8 +399,8 @@ class MDTrajectory:
                         xyz = xyz_traj[iframe] - align_info[iframe][2]
                         elen = len(elements[iframe])
                         ielements = elements[iframe].reshape((elen, 1))
-                    #   # Rotate geometry
-                    #   np.dot(xyz, align_info[iframe][1], out=xyz)
+                        # Rotate geometry
+                        np.dot(xyz, align_info[iframe][1], out=xyz)
                         coords.append(np.append(ielements, xyz, axis=1))
                         clen += elen
         else:
