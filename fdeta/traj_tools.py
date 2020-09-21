@@ -212,7 +212,7 @@ def read_gromacs_trajectory(files: Union[str, list],
     ids = []
     id_tmp = [0 if i in solute else 1 for i in range(natoms)]
     for nf in range(nframes):
-        xyz = u.trajectory[nf].positions
+        xyz = u.trajectory[nf].positions.copy()
         geometries.append(xyz)
         elements_all.append(elements)
         ids.append(id_tmp)

@@ -11,134 +11,64 @@ Base Class for trajectory analysis.
 import numpy as np
 from typing import Union
 import fdeta.kabsch as kb
+from fdeta.uelement import get_unique_elements, UElement
 from fdeta.traj_tools import default_charges, find_unique_elements, atom_to_mass
 from fdeta.traj_tools import data_from_file, clean_atom_name, atom_to_charge
+from fdeta.units import BOHR
 
 
-def get_unique_elements(elements, charges):
-    """ Sort charges by atom type.
-    It recognizes the different atom types by charges
-    and makes the list of list of charges per frame.
-    
+def perform_kabsch(reference, current, centered=False):
+    """Get translation matrix and rotation matrix from Kabsch algorithm.
+    Finds the optimal rotation matrix to align two geometries that are
+    centered on top of each other.
+
     Parameters
     ----------
-    elements : list
-        List of elements per frame.
-    charges : dict or list
-        Information about charges in trajectory, either
-        a dictionary or a list of charges per frame.
-    
+    reference : np.array
+        Reference geometry to which to align.
+    current : np.array
+        Current working geometry to be aligned.
+    centered : bool
+        Whether or the two geometries are already centered
+        on top of each other (at the origin).
     """
-    luniques = []
-    uniques = []
-    repeated = {}  # use to count repeated atoms with diff charges
-    nframes = len(elements)
-    # Case where charges are given in a list per frame
-    if isinstance(charges, list):
-        if len(elements) != len(charges):
-            raise ValueError('Number of frames of `charges` and `elements` do not match')
-        for iframe in range(nframes):
-            natoms = len(elements[iframe])
-            if len(charges[iframe]) != natoms:
-                raise ValueError('Number of atoms of `charges` and `elements` do not match')
-            for iatom in range(natoms):
-                element = elements[iframe][iatom]
-                charge = charges[iframe][iatom]
-                # check that the element is used in
-                if element not in luniques:
-                    uelem = UElement(element, charge)
-                else:
-                    index = luniques.index(element)
-                    # Check if charge is different
-                    if charge != uniques[index].charge:
-                        if element in repeated:
-                            repeated[element] +=1
-                        else:
-                            repeated[element] = 1
-                        name = element+str(repeated[element])
-                        uelem = UElement(name, charge)
-                    else:
-                        ulem = uniques[index]
-                if uelem.count_frames is None:  # New element
-                    uelem.count_frames = [0]*nframes
-                    uelem.alloc_traj = []
-                    for j in range(nframes):
-                        uelem.alloc_traj.append([])
-                uelem.count_frames[iframe] += 1
-                uelem.total_count += 1
-                uelem.alloc_traj[iframe].append(iatom)
-                # Finally add it to the list
-                if element not in luniques:
-                    uniques.append(uelem)
-                    luniques.append(element)
-                del uelem
-    elif isinstance(charges, dict):
-        for iframe in range(nframes):
-            natoms = len(elements[iframe])
-            for iatom in range(natoms):
-                element = elements[iframe][iatom]
-                charge = charges[element]
-                # check that the element is used in
-                if element not in luniques:
-                    uelem = UElement(element, charge)
-                else:
-                    index = luniques.index(element)
-                    # Check if charge is different
-                    if charge != uniques[index].charge:
-                        if element in repeated:
-                            repeated[element] +=1
-                        else:
-                            repeated[element] = 1
-                        name = element+str(repeated[element])
-                        uelem = UElement(name, charge)
-                    else:
-                        uelem = uniques[index]
-                if uelem.count_frames is None:  # New element
-                    uelem.count_frames = [0]*nframes
-                    uelem.alloc_traj = []
-                    for j in range(nframes):
-                        uelem.alloc_traj.append([])
-                uelem.count_frames[iframe] += 1
-                uelem.total_count += 1
-                uelem.alloc_traj[iframe].append(iatom)
-                # Finally add it to the list
-                if element not in luniques:
-                    uniques.append(uelem)
-                    luniques.append(element)
-                del uelem
-    else:
-        raise TypeError('`charges` must be given as list or dictionary')
-    return uniques
+    # Get translation vector to move to the origin
+    ref_centroid = centroid(reference) 
+    if not centered:
+        cur_centroid = centroid(current)
+        reference -= ref_centroid
+        current -= cur_centroid
+    rot_matrix = kabsch(current, reference)
+    return ref_centroid, rot_matrix
 
 
-class UElement:
-    """Unique elements.
+def contract_grid(values_hist):
+    """Return the expanded values on each grid point.
 
-    Attributes
+    Parameters
     ----------
-    name : str
-    symbol : str
-    charge : float
-    zcharge : float
-    mass : float
-    count_frames : list
-    alloc_traj : list(list)
+    values_hist
     """
-    def __init__(self, name, charge, count_frames=None, alloc_traj=None):
-        """ Object with all the information about each element.
-        """
-        if not isinstance(name, str):
-            raise TypeError('`name` must be a string.')
-        if not isinstance(charge, float):
-            raise TypeError('`charge` must be a float.')
-        self.name = name
-        self.symbol = clean_atom_name(name)
-        self.zcharge = atom_to_charge(self.symbol) 
-        self.charge = charge
-        self.mass = atom_to_mass(self.symbol)
-        self.count_frames = count_frames
-        self.alloc_traj = alloc_traj
-        self.total_count = 0
+    vshape = values_hist.shape
+    nx = vshape[0]
+    ny = vshape[1]
+    nz = vshape[2]
+    result = np.zeros(nx*ny*nz)
+    values = values_hist.flatten()
+    count = 0
+    for x in range(nx):
+        for y in range(ny):
+            for z in range(nz):
+                fcount = z + y*ny + x*ny*nz
+                result[count] = values[fcount]
+                count += 1
+    return result
+
+
+def apply_PBC_translation(current, trans_matrix, grid_range):
+    """Apply periodic boudary conditions to properly translate molecules.
+    """
+    raise NotImplementedError
 
 
 class MDTrajectory:
@@ -217,6 +147,7 @@ class MDTrajectory:
         # Set grid values for histogram
         self.grid_range = grid_range
         self.grid_bins = grid_bins
+        self.pcf = None
 
     @staticmethod
     def align(current, trans_matrix, rot_matrix):
@@ -270,7 +201,7 @@ class MDTrajectory:
 #       else:
 #           return alignment
 
-    def compute_pair_correlation_function(self, grid_range=None, grid_bins=None):
+    def compute_pair_correlation_functions(self, grid_range=None, grid_bins=None):
         """ Given the method computes the pair correlation function (histogram)
         of each unique element.
 
@@ -295,14 +226,62 @@ class MDTrajectory:
                 raise ValueError('`grid_bins` is missing.')
 
         # Make array with coordinates
-        for ielement in self.uniques:
-            coords = []
-            for iframe in frames:
+        for ielement in self.unique_elements:
+            fcount = 0
+            for iframe in range(self.nframes):
+                coords = []
                 for position in ielement.alloc_traj[iframe]:
-                    coords.append(self.coordinates[iframe][position]
-                coords = np.array(coords, dtype=float)
-                assert coords.shape[1] == 3
-                # Collecting all coordinates through all frames for a given element ielement
-                histogram, hedges = np.histogramdd(coordinates, range=box_range, bins=bins)
-                self.pcf[ielement] = histogram
-        return self.edges, self.pcf
+                    coords.append(self.coordinates[iframe][position])
+                if coords != []:
+                    fcount += 1
+                    coords = np.array(coords, dtype=float)
+                    assert coords.shape[1] == 3
+
+                    # Collecting all coordinates through all frames for a given element ielement
+                    histogram, hedges = np.histogramdd(coords, range=grid_range, bins=grid_bins)
+                    if not hasattr(self, 'edges'):
+                        self.edges = hedges
+                    else:
+                        if not np.allclose(hedges, self.edges):
+                            raise Warning('There is a discrepancy between previously used grid.')
+                    if ielement.name in self.pcf:
+                        self.pcf[ielement.name] += histogram
+                    else:
+                        self.pcf[ielement.name] = histogram
+            ielement.frame_count = fcount
+        return self.pcf
+
+    def compute_charge_densities(self):
+        """Evaluate the total and electronic charge from the PCFs.
+
+        Returns
+        -------
+        charge_density, electron_density : np.array
+            Total charge density and electronic density evaluated in the cubic grid used
+            for the histogram, already sorted as in the cubic file format.
+        """
+        if self.pcf is None:
+            self.compute_pair_correlation_functions()
+        # Get grid size, assuming all the element PCFs are done in the same grid
+        random_element = self.unique_elements[0].name
+        electron_grid = np.zeros(self.pcf[random_element].shape)
+        charge_grid = electron_grid.copy()
+        for uelement in self.unique_elements:
+            if uelement.charge > 0:
+                ccoeff = uelement.zcharge - uelement.charge
+            else:
+                ccoeff = uelement.zcharge + abs(uelement.charge)
+            electron_grid += ccoeff*self.pcf[uelement.name]/uelement.frame_count
+            charge_grid += uelement.charge*self.pcf[uelement.name]/uelement.frame_count
+        delta = np.diff(self.edges)
+        dv = delta[0][0] * delta[1][0] * delta[2][0]
+
+        # Expand in cubic grid-point order
+        # and divide by volume element
+        charges = contract_grid(charge_grid)
+        electron_density = contract_grid(electron_grid)
+        charge_density = charges / dv
+        charge_density *= BOHR**3
+        electron_density /= dv
+        electron_density *= BOHR**3
+        return charge_density, electron_density

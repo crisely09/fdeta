@@ -4,7 +4,7 @@
 #  project: https://github.com/charnley/rmsd
 #  license: https://github.com/charnley/rmsd/blob/master/LICENSE
 # -
-""" Calculate RMSD between two XYZ files.
+""" All functions related to the Kabsch algorithm.
 
 """
 
@@ -40,7 +40,7 @@ def fit(P, Q):
     return rmsd_best
 
 
-def kabsch(P, Q, rmsd_only=False):
+def kabsch(P, Q, return_full=False):
     """ The Kabsch algorithm
 
     http://en.wikipedia.org/wiki/Kabsch_algorithm
@@ -59,6 +59,13 @@ def kabsch(P, Q, rmsd_only=False):
     The optimal rotation matrix U is then used to
     rotate P unto Q so the RMSD can be caculated
     from a straight forward fashion.
+
+    Returns
+    -------
+    If return_full is True, then return the rotated
+    matrix P', the optimal rotation matrix U and
+    the root-mean square deviation.
+    Else, return just the rotation matrix U.
 
     """
 
@@ -83,13 +90,12 @@ def kabsch(P, Q, rmsd_only=False):
     U = numpy.dot(V, W)
 
     # Rotate P
-    P = numpy.dot(P, U)
+    Pprime = numpy.dot(P, U)
 
-    if rmsd_only:
-        return rmsd(P, Q)
+    if return_full:
+        return Pprime, U, rmsd(Pprime, Q)
     else:
-        return P, U, rmsd(P, Q)
-
+        return U
 
 
 def centroid(X):
