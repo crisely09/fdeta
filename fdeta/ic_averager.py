@@ -49,8 +49,8 @@ def plot_2Ddistrib(data: np.ndarray, index: list, bins: int = 36,
     ax = fig.add_subplot(111)
     range_ = (0, 360) if pos_range else (-180, 180)
     ax.hist2d(data[index[0], :], data[index[1], :], bins=[bins,bins], range=(range_,range_))
-    ax.set_ylabel("{}".format(index[1])) 
     ax.set_xlabel("{}".format(index[0]))
+    ax.set_ylabel("{}".format(index[1])) 
     ax.set_title(title)
     return fig
 
@@ -427,9 +427,8 @@ class ic_averager:
             not pandas zmat._frame.index, i.e. the cartesian numbering.
         """
         if method == "std":
-#            self.rotate = np.arange(self.natoms)[np.logical_and(abs(self.dih_c_std - self.dih_std) < diff_std_thresh,
-#                                                 np.maximum(abs(self.dih_std), abs(self.dih_c_std)) > std_thresh)]
-            detected = np.arange(self.natoms)[np.logical_and(np.minimum(self.dih_std, self.dih_c_std) > thresh_min,np.minimum(self.dih_std, self.dih_c_std) < thresh_max)]
+            detected = np.arange(3,self.natoms)[np.logical_and(np.minimum(self.dih_std[3:], self.dih_c_std[3:]) > thresh_min,np.minimum(self.dih_std[3:], self.dih_c_std[3:]) < thresh_max)]
+            
             setattr(self, group_name, detected)
             print("{} atoms have been detected with the specified thresholds".format(detected.shape[0]))  
             print("array numbering: {}".format(", ".join(list(map(str,detected)))))
@@ -489,11 +488,15 @@ class ic_averager:
         method: str
             method to use. Options:
                 "pick_first": pick dihedrals for self.rotate from the first frame
+                "major_basin": detects groups of atoms bound to the same atom (e.g. methyl), 
+                               analyses the one among these that has most clear major/minor conformations
+                               selects the major one, and applies averaged difference to the other angles
+                "minor_basin": the same as major but selects the minor basin                                
         """
         if method == "pick_first":
             self.zmat._frame["dihedral"].values[getattr(self, group_name)] = self.zmat1._frame["dihedral"].values[getattr(self, group_name)]
-        if method == "major_basin":
-            groups=[]  # becomes list of 1D-array
+        if method in ["major_basin","minor_basin"]:
+            groups=[]  # becomes list of 1D-arrays
             for r  in getattr(self, group_name):
                 if r not in list(it.chain.from_iterable(groups)):
                     b2s_cart = self.c_table[self.c_table["b"]==self.c_table.iloc[r]["b"]].index  # bound to the same, cartesian numbering
@@ -501,22 +504,24 @@ class ic_averager:
                     groups.append(b2s_arr)
             for gr in groups:  # gr is an array
                 if len(gr)==1: # if only 1 rotating in gr,  e.g. H in OH
-                    self.find_clusters(index = gr[0], min_centers = 2, max_centers = 3, var = "dihedral")
+                    if not hasattr(self,"dihclustdict") or gr[0] not in self.dihclustdict.keys():
+                        self.find_clusters(index = gr[0], min_centers = 2, max_centers = 3, var = "dihedral")
                     weights = [len(i) for i in self.dihclustdict[gr[0]]]
-                    main = weights.index(max(weights))
+                    main = weights.index(max(weights)) if method=="major_basin" else weights.index(sorted(weights)[-2])
                     self.zmat._frame["dihedral"].values[gr[0]] = self.dihcentdict[gr[0]][main]
                 else:  # if more than 1 rotating in gr, e.g. methyl
                     weights = []  # will be list of lists with basin weights per dih in group
                     sort_weights = []  # same but ordered
                     prom = []  # prominence for each d in gr
                     for n,d in enumerate(gr):  # n is numbering within group, d is numbering for dih
-                        print("n: {}, d: {}".format(n,d))
-                        self.find_clusters(index = d, min_centers = 2, max_centers = 3, var = "dihedral")
+                        if not hasattr(self,"dihclustdict") or d not in self.dihclustdict.keys():
+                            self.find_clusters(index = d, min_centers = 2, max_centers = 3, var = "dihedral")
                         weights.append([len(i) for i in self.dihclustdict[d]])
                         sort_weights.append(sorted(weights[n]))
                         prom.append(sort_weights[n][-1] - sort_weights[n][-2])
                     topick = prom.index(max(prom))  # best n to pick the major basin, use gr[topick] to get d
-                    tosub = self.dihcentdict[gr[topick]][weights[topick].index(max(weights[topick]))]
+                    main = weights[topick].index(max(weights[topick])) if method=="major_basin" else weights[topick].index(sorted(weights[topick])[-2])
+                    tosub = self.dihcentdict[gr[topick]][main]
                     for n,d in enumerate(gr):  # n is numbering within group, d is numbering for dih
                         if n == topick:
                             self.zmat._frame["dihedral"].values[d] = tosub 
@@ -531,7 +536,7 @@ class ic_averager:
                            thresh_rot: Union[float, int] = 90,
                            fix_rotate: str = "pick_first",
                            detect_osc: str = "std",
-                           thresh_osc: Union[float, int] = 40,
+                           thresh_osc: Union[float, int] = 37.5,
                            fix_osc: str = "major_basin"):
         """Averages the internal coordinates. Rotate/ing refers to fully/freely rotating groups,
         oscillate/ing refers to groups oscillating between two conformers.
@@ -561,9 +566,10 @@ class ic_averager:
         cc.Zmat
             the averaged structure
         """
+        print("tresholds: {}, {}".format(thresh_osc,thresh_rot))
         options = {"correct_quasilinears": ["no", "std"],
                    "detect_rotate": ["no", "std", "stored"],
-                   "fix": ["no", "pick_first", "major_basin"]}
+                   "fix": ["no", "pick_first", "major_basin","minor_basin"]}
         if correct_quasilinears not in options["correct_quasilinears"]:
             raise ValueError("correct_quasilinears can be among {}".format(", ".join(options["correct_quasilinears"])))
         if detect_rotate not in options["detect_rotate"]:
@@ -597,6 +603,7 @@ class ic_averager:
             else:
                 raise ValueError("Only \"std\" is implemented now as rotation detection")
             if fix_osc != "no":
+                print("about to fix osc")
                 self.fix_rotate(method = fix_osc, group_name = "osc")  
 #                print("fixed oscillate with method: {}".format(fix_osc))
         self.cart = self.zmat.get_cartesian()

@@ -52,20 +52,21 @@ def plot_distrib(data: np.ndarray, index: Union[list,int], centers: np.ndarray, 
     ax.set_title(title)
     return fig
 
-idx = 37
-ncenters = 1
+idx = 10
+ncenters = 2
 maxcenters = 10
-ret = icvg.ic_averager.from_int_coord_file(int_coord_file="internal_coordinates.npz")
-#ret.average_int_coords(view=False)
-#ret.find_clusters(index=37)
-#T = ret.dih_c
-#t = ret.dih_c[idx].reshape(-1,1)
+ret = icvg.ic_averager.from_int_coord_file()
+ret.correct_quasilinears()
+#ret.average_int_coords()
+#ret.find_clusters(index=idx, max_centers=5)
+T = ret.dih
+t = ret.dih[idx].reshape(-1,1)
 #
-#initial_centers = kmeans_plusplus_initializer(t, ncenters).initialize()
-#xmeans_instance = xmeans(t, initial_centers, maxcenters)
-#xmeans_instance.process()
-#clusters = xmeans_instance.get_clusters()
-#centers = xmeans_instance.get_centers()
+initial_centers = kmeans_plusplus_initializer(t, ncenters).initialize()
+xmeans_instance = xmeans(t, initial_centers, maxcenters)
+xmeans_instance.process()
+clusters = xmeans_instance.get_clusters()
+centers = xmeans_instance.get_centers()
 #
-#fig = plot_distrib(T, idx, centers, bins = 360)
-#fig.show()
+fig = plot_distrib(T, idx, centers, bins = 360, pos_range=False)
+fig.show()
