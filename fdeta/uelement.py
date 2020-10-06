@@ -43,20 +43,33 @@ def get_unique_elements(elements, charges):
             for iatom in range(natoms):
                 element = elements[iframe][iatom]
                 charge = charges[iframe][iatom]
-                # check that the element is used in
+                # check that the element is used already
                 if element not in luniques:
+                    ename = element
                     uelem = UElement(element, charge)
                 else:
                     index = luniques.index(element)
                     # Check if charge is different
                     if charge != uniques[index].charge:
                         if element in repeated:
-                            repeated[element] +=1
+                            nrep = range(1, repeated[element]+1)
+                            rindices = [luniques.index(element+str(i)) for i in nrep]
+                            rcharges = [uniques[ind].charge for ind in rindices]
+                            if charge not in rcharges:
+                                repeated[element] += 1
+                                ename = element+str(repeated[element])
+                                uelem = UElement(ename, charge)
+                            else:
+                                cindex = rcharges.index(charge)
+                                findex = rindices[cindex]
+                                ename = element+str(nrep[cindex])
+                                uelem = uniques[findex]
                         else:
                             repeated[element] = 1
-                        name = element+str(repeated[element])
-                        uelem = UElement(name, charge)
+                            ename = element+str(repeated[element])
+                            uelem = UElement(ename, charge)
                     else:
+                        ename = element
                         uelem = uniques[index]
                 if uelem.count_frames is None:  # New element
                     uelem.count_frames = [0]*nframes
@@ -67,9 +80,9 @@ def get_unique_elements(elements, charges):
                 uelem.total_count += 1
                 uelem.alloc_traj[iframe].append(iatom)
                 # Finally add it to the list
-                if element not in luniques:
+                if ename not in luniques:
                     uniques.append(uelem)
-                    luniques.append(element)
+                    luniques.append(ename)
                 del uelem
     elif isinstance(charges, dict):
         for iframe in range(nframes):
@@ -107,6 +120,7 @@ def get_unique_elements(elements, charges):
                 del uelem
     else:
         raise TypeError('`charges` must be given as list or dictionary')
+    print('luniques', luniques)
     return uniques
 
 

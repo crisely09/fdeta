@@ -221,10 +221,13 @@ class MDTrajectory:
         if grid_range is None:
             if self.grid_range is None:
                 raise ValueError('`grid_range` is missing.')
+        else:
+            self.grid_range = grid_range
         if grid_bins is None:
             if self.grid_bins is None:
                 raise ValueError('`grid_bins` is missing.')
-
+        else:
+            self.grid_bins = grid_bins
         # Make array with coordinates
         for ielement in self.unique_elements:
             fcount = 0
@@ -238,7 +241,7 @@ class MDTrajectory:
                     assert coords.shape[1] == 3
 
                     # Collecting all coordinates through all frames for a given element ielement
-                    histogram, hedges = np.histogramdd(coords, range=grid_range, bins=grid_bins)
+                    histogram, hedges = np.histogramdd(coords, range=self.grid_range, bins=self.grid_bins)
                     if not hasattr(self, 'edges'):
                         self.edges = hedges
                     else:

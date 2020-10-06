@@ -168,7 +168,9 @@ def make_cubic_grid(grid_shape: tuple, vectors: np.ndarray,
                 vector = np.arange(beg, end-size, size)
         axis.append(vector)
 
-    xv, yv, zv = np.meshgrid(axis[0], axis[1], axis[2])
+    # This swap of x and y is needed because of the z, y, x
+    # evolution of cubic grids
+    xv, yv, zv = np.meshgrid(axis[1], axis[0], axis[2])
     xv = xv.reshape((xv.size,))
     yv = yv.reshape((yv.size,))
     zv = zv.reshape((zv.size,))
