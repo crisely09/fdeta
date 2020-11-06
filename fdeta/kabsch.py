@@ -104,6 +104,30 @@ def centroid(X):
     return C
 
 
+def align_two_vectors(v0, v1):
+    r"""Find rotation matrix that aligns two vectors
+    to point in the same direction.
+
+    Parameters
+    ----------
+    v0, v1 : np.ndarray(3,)
+        Vectors to be aligned.
+
+    Returns:
+    rot_matrix :  np.ndarray((3, 3))
+        Rotation matrix that aligns the two vectors.
+    """
+    va = v0/np.linalg.norm(v0)
+    vb = v1/np.linalg.norm(v1)
+    c = np.dot(va, vb)
+    v = np.cross(va, vb)
+    s = np.linalg.norm(v)
+    # skew-symmetric cross-product matrix of v
+    sscp = np.array([[0, -v[2], v[1]], [v[2], 0, -v[0]], [-v[1], v[0], 0]])
+    rot_matrix = np.eye(3) + sscp + (np.dot(sscp, sscp)*((1. - c)/pow(s, 2)))
+    return rot_matrix
+
+
 def rmsd(V, W):
     """ Calculate Root-mean-square deviation from two sets of vectors V and W.
     """

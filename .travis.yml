@@ -41,12 +41,13 @@ install:
   - pip install numpy
   - pip install scipy
   - pip install nose
-  - pip install pybind11
   - pip install qcelemental
   - pip install chemcoord
+  - pip install pandas
+  - pip install pyclustering
   - python setup.py build_ext --inplace
 script:
-  - python -m pytest --ignore=lib/pybind11 -v --cov=fdeta
+  - python -m pytest --cov=fdeta
 
 notifications:
     email: false

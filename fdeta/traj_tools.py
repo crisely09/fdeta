@@ -297,6 +297,28 @@ def make_trajectory_file(file_root: str, input_format='xyz',
                 ofile.write("%s\t%.8f\t%.8f\t%.8f\n" % values)
 
 
+def write_xyz_file(elements, geometry, fname='molecule.xyz'):
+    """Write xyz file from a geometry.
+
+    Parameters
+    ----------
+    elements : list/array
+        List of atomic symbols
+    geometry :  np.ndarray
+        Cartesian coordinates of the atoms in the same order as elements.
+    fname : str
+        Name of output file.
+    """
+    natoms = len(elements)
+    with open(fname, 'w') as ofile:
+        ofile.write("%d\n" % natoms)
+        ofile.write("NFrame = 0\n")
+        for iatom in range(natoms):
+            values = (elements[iatom], geometry[iatom, 0],
+                      geometry[iatom, 1], geometry[iatom, 2])
+            ofile.write("%s\t%.8f\t%.8f\t%.8f\n" % values)
+
+
 def check_length_trajectories(data: list) -> int:
     """Compare the number of frames of two sets of geometries.
     
