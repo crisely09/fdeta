@@ -95,11 +95,15 @@ def get_data_lines(files: Union[str, list]):
     """
     if not isinstance(files, list):
         # One file only
+        if not isinstance(files, str):
+            raise TypeError('Only list or str are valid.')
         with open(files, 'r') as finp:
             data = finp.readlines()
     elif isinstance(files, (list, str)):
         data = []
         for fname in files:
+            if not isinstance(fname, str):
+                raise TypeError('Only list or str are valid.')
             with open(fname, 'r') as finp:
                 lines = finp.readlines()
                 data += lines

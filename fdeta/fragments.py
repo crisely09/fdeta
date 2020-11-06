@@ -7,6 +7,7 @@ Tools for Fragment/Molecule handling.
 
 import os
 import numpy as np
+import qcelemental as qce
 
 
 def get_bond_matrix(elements, geos, unit='bohr'):
@@ -83,3 +84,33 @@ def find_fragments(elements, geos, unit='bohr'):
                 frag_list.append(nonzeros)
                 frags.append(geos[nonzeros])
     return frag_list, frags
+
+
+def get_interfragment_distances(frag0, frag1):
+    """Get all the distances between the of two fragments
+
+    Parameters
+    ----------
+    frag0, frag1
+        Geometry arrays of each fragment.
+
+    Returns
+    -------
+    distances : list
+        All distances between the two fragments
+    """
+    distances = []
+    if len(frag0.shape) > 1:
+        for xyz0 in frag0:
+            if len(frag1.shape) > 1:
+                for xyz1 in frag1:
+                    distances.append(np.linalg.norm(xyz0 - xyz1))
+            else:
+                distances.append(np.linalg.norm(xyz0 - frag1))
+    else:
+        if len(frag1.shape) > 1:
+            for xyz1 in frag1:
+                distances.append(np.linalg.norm(frag0 - xyz1))
+        else:
+            distances.append(np.linalg.norm(frag0 - frag1))
+    return distances

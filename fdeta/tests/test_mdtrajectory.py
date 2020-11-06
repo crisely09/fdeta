@@ -7,7 +7,7 @@ import pytest
 from fdeta.units import BOHR
 from fdeta.traj_tools import data_from_file
 from fdeta.traj_tools import read_gromacs_trajectory
-from fdeta.mdtrajectory_new import MDTrajectory
+from fdeta.mdtrajectory import MDTrajectory
 
 
 def test_base():
@@ -40,12 +40,13 @@ def test_pcf():
     dic = os.getenv('FDETADATA')
     traj = os.path.join(dic, 'test_traj.fde')
     data = data_from_file(traj)
-    ta = MDTrajectory(data)
+    charges = {'O': -0.834, 'C': 0.2, 'H': 0.417}
+    ta = MDTrajectory(data['elements'], data['geometries'], charges)
     box_size = np.array([6, 6, 6])
     grid_size = np.array([10, 10, 10])
     histogram_range = np.asarray([-box_size/2., box_size/2.]).T
-    edges, pcf = ta.compute_pair_correlation_functions(histogram_range,
-                                                      grid_size, 0)
+    pcf = ta.compute_pair_correlation_functions(histogram_range,
+                                                      grid_size)
     pcfO = np.where(pcf["O"] == 1.0)
     assert np.allclose(pcfO, (np.array([1]), np.array([1]), np.array([0])))
 
@@ -63,5 +64,5 @@ def gromacs():
 
 if __name__ == "__main__":
     test_base()
-#   test_files()
 #   test_pcf()
+#   test_files()

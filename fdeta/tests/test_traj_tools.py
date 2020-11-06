@@ -139,11 +139,6 @@ def test_data_from_file():
     assert geos['ids'][0][:10] == ['0']*10
 
 
-def test_make_trajectory_file():
-    with pytest.raises(NotImplementedError):
-        read_gromacs_trajectory('something', input_format='.gro')
-
-
 def test_check_length_trajectories():
     return
 

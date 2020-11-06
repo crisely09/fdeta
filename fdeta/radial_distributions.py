@@ -6,41 +6,10 @@ import numpy as np
 import qcelemental as qce
 
 from fdeta.traj_tools import compute_center_of_mass
-from fdeta.fragments import find_fragments
+from fdeta.fragments import find_fragments, get_interfragment_distances
 from fdeta.kabsch import centroid
+from fdeta.units import BOHR
 
-
-BOHR = 0.529177249
-
-
-def get_interfragment_distances(frag0, frag1):
-    """Get all the distances between the of two fragments
-
-    Parameters
-    ----------
-    frag0, frag1
-        Geometry arrays of each fragment.
-
-    Returns
-    -------
-    distances : list
-        All distances between the two fragments
-    """
-    distances = []
-    if len(frag0.shape) > 1:
-        for xyz0 in frag0:
-            if len(frag1.shape) > 1:
-                for xyz1 in frag1:
-                    distances.append(np.linalg.norm(xyz0 - xyz1))
-                else:
-                    distances.append(np.linalg.norm(xyz0 - frag1))
-    else:
-        if len(frag1.shape) > 1:
-            for xyz1 in frag1:
-                distances.append(np.linalg.norm(frag0 - xyz1))
-        else:
-            distances.append(np.linalg.norm(frag0 - frag1))
-    return distances
 
 
 def shortest_distance(ref_geo, work_geo):
