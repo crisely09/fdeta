@@ -45,6 +45,7 @@ install:
   - pip install chemcoord
   - pip install pandas
   - pip install pyclustering
+  - export FDETADATA=$PWD/fdeta/data
   - python setup.py build_ext --inplace
 script:
   - python -m pytest --cov=fdeta
