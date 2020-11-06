@@ -78,10 +78,10 @@ setup(
     packages=find_packages(),
     include_package_data=True,
     # Allows `setup.py test` to work correctly with pytest
-    install_requires=['numpy>=1.14.0', 'scipy>=1.0.0', 'pyclustering>=0.10.0', 
-                      'pandas>=0.22.0', 'qcelemental>=0.4.0',
-                      'chemcoord>=2.0.4'],
-    setup_requires=['numpy>=1.14.0', 'qcelemental>=0.4.0'] + pytest_runner,
+#   install_requires=['pyclustering>=0.10.0', 
+#                     'qcelemental>=0.4.0',
+#                     'chemcoord>=2.0.4'],
+    setup_requires=pytest_runner,
     # Additional entries
     python_requires=">=3.6",
     classifiers=[

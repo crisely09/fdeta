@@ -11,12 +11,10 @@ Installation
 ------------
 
 * Prerequisites
-    - Cmake 2.8 or higher
     - Python 3.6 or higher
     - Numpy 1.8.0 or higher
     - Scipy 0.10 or higher (0.12.0 or higher for python 3.4 - 3.8)
     - QCElemental (https://github.com/MolSSI/QCElemental)
-    - PyBind11
     - Nose
     - Chemcoord (http://chemcoord.readthedocs.org/)
 
