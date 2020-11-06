@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-#  Created on Wed Jan 28 17:35:35 2015
+#  Created on Sept 2020
 #  Trajectory Class
-#  @author: alaktionov
-#  Adapted by C.G.E. 2019
+#  @author: C.G.E.
 """
 Base Class for trajectory analysis.
 
@@ -11,312 +10,306 @@ Base Class for trajectory analysis.
 
 import numpy as np
 from typing import Union
-import fdeta.kabsch as kb
-from fdeta.traj_tools import default_charges
+from fdeta.kabsch import centroid, kabsch
+from fdeta.uelement import get_unique_elements, UElement
+from fdeta.traj_tools import default_charges, find_unique_elements, atom_to_mass
+from fdeta.traj_tools import data_from_file, clean_atom_name, atom_to_charge
+from fdeta.traj_tools import compute_center_of_mass
+from fdeta.units import BOHR
+
+
+def perform_kabsch(reference, current, masses, centered=False):
+    """Get translation matrix and rotation matrix from Kabsch algorithm.
+    Finds the optimal rotation matrix to align two geometries that are
+    centered on top of each other.
+
+    Parameters
+    ----------
+    reference : np.array
+        Reference geometry to which to align.
+    current : np.array
+        Current working geometry to be aligned.
+    centered : bool
+        Whether or the two geometries are already centered
+        on top of each other (at the origin).
+    """
+    # Get translation vector to move to the origin
+    # ref_centroid = centroid(reference) 
+    ref_centroid = compute_center_of_mass(masses, reference)
+    if not centered:
+        # cur_centroid = centroid(current)
+        cur_centroid = compute_center_of_mass(masses, current)
+        new_current = current - cur_centroid
+        new_reference = reference - ref_centroid
+        rot_matrix = kabsch(new_current, new_reference)
+    else:
+        rot_matrix = kabsch(current, reference)
+    return ref_centroid, rot_matrix
+
+
+def simple_pbc(coords, limits):
+    """Apply simple PBC.
+
+    Parameters
+    ----------
+    coords : np.array(Natoms, 3)
+        Cartesian coordinates of all atoms.
+    limits : list/array shape(3,2)
+        Max and min limits in each cartesian axis.
+    """
+    result = coords.copy()
+    for point in result:
+        for axis in range(3):
+            if point[axis] < limits[axis, 0]:
+                point[axis] += limits[axis, 1]
+            elif point[axis] > limits[axis, 1]:
+                point[axis] -= limits[axis, 1]
+    return result
+
+
+def contract_grid(values_hist):
+    """Return the expanded values on each grid point.
+
+    Parameters
+    ----------
+    values_hist
+    """
+    vshape = values_hist.shape
+    nx = vshape[0]
+    ny = vshape[1]
+    nz = vshape[2]
+    result = np.zeros(nx*ny*nz)
+    values = values_hist.flatten()
+    count = 0
+    for x in range(nx):
+        for y in range(ny):
+            for z in range(nz):
+                fcount = z + y*ny + x*ny*nz
+                result[count] = values[fcount]
+                count += 1
+    return result
+
+
+def apply_PBC_translation(current, trans_matrix, grid_range):
+    """Apply periodic boudary conditions to properly translate molecules.
+    """
+    raise NotImplementedError
 
 
 class MDTrajectory:
     """
         Reading a trajectory from XYZ file name, picking a subsystem from XYZ trajectory.
 
-        Attributes
-        ----------
-        natoms : int
-            Number of atoms in a system.
-        frames : ndarray
-            3D ndarray, shape(Total_number_of_frames,Number_of_atoms,Coordinate_column).
-            To read X,Y,Z,Molecule_ID Coordinate_column must be equal 0,1,2,3 respectively.
-        charges : dict
-            Type of unique atom (H,C,N,O...) and charge.
-        nframes: int
-            Total number of frames in trajectory.
-        nfrags : int
-            Number of fragments present in trajectory.
-        topology : dictionary
-            {frag_id: {geometries:3D ndarray, elements: ndarray(str), uniques: ndarray(str)}}
+    Attributes
+    ----------
+    elements : list(list(str))
+        List of elements per frame.
+    coordinates : list(np.ndarray)
+        List of coordinates per frame.
+    unique_elements : dict(UElement)
+        All the information of unique elements in the trajectory.
+    grid_range : np.ndarray([xmin, xmax], [ymin, ymax], [zmin, zmax]).T
+        3D Range in each axis.
+    grid_bins :  tuple (Nx, Ny, Nz)
+        Number of bins used in each axis for histograms.
 
     """
-    def __init__(self, traj_file: str, charges_file: str = None):
+    def __init__(self, elements, coordinates, charges, grid_range=None, grid_bins=None):
         """
-        Read trajectory and topology from the files 'name' and 'topology'.
 
         Parameters
         ----------
-        traj_file :
-            Name of the XYZ trajectory file.
-            'number of atoms
-             number of frame
-             element  X Y Z molecule_ID'
-        charges_file :
-            Name of file with charges for each atom.
-
+        elements : list or list of lists 
+            List/array of elements, multiple lists if different 
+            for each frame of the trajectory.
+        coordinates : 
+            Coordinates of each element for each frame.
+        charges : dict or list
+            Two options: 1) Charges of each unique element, or 2)list of 
+            charges per element element for each frame.
+        grid_range : np.array(([xmin, xmax], [ymin, ymax], [zmin, zmax])).T 
+            Grid needed for making histograms.
+        grid_bins : tuple(Nx, Ny, Nz)
+            Number (integer) of bins to use on each axis.
         """
-        # Read trajectory from file
-        with open(traj_file, "r") as f:
-            data = f.readlines()
-
-        frags = []
-        elements = []
-        self.charges = {}
-        self.aligned = {}
-        self.edges = None
-        for i, line in enumerate(data):
-            if i == 0:
-                self.natoms = np.int(line)
-                self.frames = np.zeros((1, self.natoms, 4))
-                self.nframes = 1
-                current = 0
-                atom_count = 0
-            elif i == self.nframes*(self.natoms + 2):
-                atom_count = 0
-                current += 1
-                self.nframes += 1
-                self.frames = np.append(self.frames, np.zeros((1, self.natoms, 4)), axis=0)
-            elif i == current*(self.natoms+2) + 1:
-                pass
-            else:
-                if current == 0:
-                    elements.append(line.split()[0])
-                self.frames[current][atom_count] = np.float64(line.rsplit()[1:])
-                ifrag = self.frames[current][atom_count][-1]
-                if ifrag not in frags:
-                    frags.append(int(ifrag))
-                atom_count += 1
-        self.frags = frags
-        self.nfrags = len(frags)
-
-        # Save the information in the topology dictionary
-        self.elements = elements
-        elements = np.array(elements, dtype=str)
-        self.topology = {}
-        for frag_id in frags:
-            index = np.where(self.frames[:, :, 3] == frag_id)  # All indices of subsystem
-            natom_frag = len(index[1])//self.nframes
-            fragment = np.reshape(self.frames[index],
-                                  (self.nframes, natom_frag, 4))
-            self.topology[frag_id] = dict(geometries=fragment[:, :, :3],
-                                          elements=elements[index[1][:natom_frag]])
-
-        # Save charges of all elements in the system
-        if charges_file is None:
-            self.charges = default_charges(elements)
+        # Standard checks
+        if not isinstance(coordinates, list):
+            if not isinstance(coordinates, np.ndarray):
+                raise TypeError('`coordinates` should be either a list or an numpy array.')
+        self.nframes = len(coordinates)
+        if not isinstance(elements, list):
+            if not isinstance(elements, np.ndarray):
+                raise TypeError("`elements` should be either a list or an numpy array.")
+        if not isinstance(coordinates[0], np.ndarray):
+            coords = []
+            addcoords = True
         else:
-            self.read_charges(charges_file)
-
-    def read_charges(self, fname: str):
-        """ Read charges from file.
-        It saves the charges from a file and takes into account the unique elements.
-
-        Parameters
-        ----------
-        fname : str
-            Name of file which contains the charges, one per element,
-            it should match the trajectory.
-
-        """
-        # Read charges and find unique elements
-        elements = []
-        uniques = []
-        repeated = {}  # use to count repeated atoms with diff charges
-        with open(fname, "r") as fc:
-            cdata = fc.readlines()
-        if len(cdata) != self.natoms:
-            assert ValueError("Number of atoms in charge_file does not match with trajectory given.")
-        for i, line in enumerate(cdata):
-            element, charge = line.split()
-            elements.append(element)
-            if element not in self.charges:
-                self.charges[element] = (i, float(charge))
-                uniques.append(element)
-            else:
-                if self.charges[element][1] != float(charge):
-                    if element in repeated:
-                        repeated[element] += 1
-                    else:
-                        repeated[element] = 0
-                    nelement = element + str(repeated[element])
-                    self.charges[nelement] = (i, float(charge))
-                    uniques.append(nelement)
-        self.elements = uniques
-        uniques = np.array(uniques, dtype=str)
-        # Now save topology with the right types of atoms
-        for frag_id in self.frags:
-            index = np.where(self.frames[:, :, 3] == frag_id)
-            self.topology[frag_id]['uniques'] = uniques[index[0]]
-
-    def get_structure_from_topology(self, frag_id: int = None,
-                                    iframe: int = None,
-                                    topology: dict = None):
-        """
-        Given frame number and frag_id returns the ndarray of XYZ coordinates.
-
-        Parameters
-        ----------
-        frag_id : int
-            Molecular ID number
-        iframe : int
-            Frame number
-        topology : dict
-            Input topology
-
-        Returns
-        ----------
-        topology[frag_id][0][iframe] : ndarray
-
-        """
-
-        if None not in (frag_id, iframe, topology):
-            return topology[frag_id]['geometries'][iframe]
+            addcoords = False
+            self.coordinates = coordinates
+        if isinstance(elements[0], list):
+            if len(elements) != self.nframes:
+                raise ValueError('Number of frames of `elements` and `coordinates` do not match')
+            self.elements = elements
+            if addcoords:
+                for i in range(self.nframes):
+                    xyztmp = coordinates[i]
+                    coords.append(np.array(coordinates[i]))
+                    if coords[-1].shape[1] != 3:
+                        raise ValueError('Coordinates should be shape (Nelements, 3)')
+            self.coordinates = coords
         else:
-            print("Parameters are not specified correctly!")
-
-    def save_topology(self, frag_id, frames: list = None,
-                      geometries: np.ndarray = None,
-                      fname: str = 'topology_'):
-        """ Save the topology for a given fragment.
-
-        Parameters
-        ----------
-        frag_id : int
-            ID of fragment to use.
-        geometries : dict(np.ndarray((nelements, 3)))
-            Geometries of the fragment along topology.
-            If not given, the initial geometries are used.
-        fname : str
-            Name for the output file.
-
-        """
-        if frames is None:
-            frames = range(self.nframes)
-        atoms = self.topology[frag_id]['elements']
-        natoms = len(atoms)
-        # Getting Elements from Topology and XYZ from outside
-        with open(fname+str(frag_id)+'.txt', 'w') as fout:
-            for iframe in frames:
-                fout.write(str(natoms)+'\n')
-                fout.write(str('Frame '+str(iframe)+'\n'))
-                if geometries is None:
-                    coords = self.get_structure_from_topology(frag_id, iframe, self.topology)
-                else:
-                    coords = geometries[iframe]
-                for iline in range(natoms):
-                    line = ' '.join(coords[iline].astype(str))
-                    fout.write(str(atoms[iline])+' '+line+' '+str(frag_id)+'\n')
+            els = []
+            for i in range(self.nframes):
+                els.append(elements)
+                if addcoords:
+                    xyztmp = coordinates[i]
+                    if coordinates.shape[1] != 3:
+                        raise ValueError('Coordinates should be shape (Nelements, 3)')
+                    coords.append(np.array(coordinates[i]))
+            self.elements = els
+            self.coordinates = coords
+        self.unique_elements = get_unique_elements(self.elements, charges)
+        # Set grid values for histogram
+        self.grid_range = grid_range
+        self.grid_bins = grid_bins
+        self.pcf = None
 
     @staticmethod
-    def align(current: np.ndarray, reference: np.ndarray):
-        """Align two geometries using Kabsch algorithm."""
+    def align(current, trans_matrix, rot_matrix):
+        """Align two geometries using matrices from Kabsch algorithm.
+        
+        Parameters
+        ----------
+        current : np.ndarray
+            Coordinates of molecule to align.
+        trans_matrix : np.ndarray
+            Translation matrix, usually the centroid of a molecule.
+        rot_matrix : np.ndarray
+            Rotation matrix result of the Kabsch algorithm.
+        """
         # Getting structures to be fitted
         geo = current.copy()
-        ref_geo = reference.copy()
-        # Computation of the centroids
-        geo_centroid = kb.centroid(geo)
-        ref_centroid = kb.centroid(ref_geo)
         # Translation of structures
-        geo -= geo_centroid
-        ref_geo -= ref_centroid
-        aligned, rmsd_error = kb.kabsch(geo, ref_geo, output=True)
-        return aligned, rmsd_error
+        geo -= trans_matrix
+        np.dot(geo, rot_matrix, out=geo)
+        return geo
 
-    def align_along_trajectory(self, frag_id: int, trajectory: dict = None,
-                               to_file: bool = False):
-        """ Aligns all structures in MD trajectory to the first one.
+#   def align_along_trajectory(self, frag_id: int, trajectory: dict = None,
+#                              to_file: bool = False):
+#       """ Aligns all structures in MD trajectory to the first one.
 
-        Arguments
-        ---------
-        frag_id : int
-            The unique number determining the molecule.
-        trajectory : dictionary
-            trajectory has the same structure as Trajectory.Topology.
+#       Arguments
+#       ---------
+#       frag_id : int
+#           The unique number determining the molecule.
+#       trajectory : dictionary
+#           trajectory has the same structure as Trajectory.Topology.
 
-        """
-        if trajectory is None:
-            trajectory = self.topology
-        alignment = {}
-        errors = {}
-        # Given frag_id, the reference structure is taken from the first frame.
-        reference = self.get_structure_from_topology(frag_id, 0, trajectory)
-        for iframe in range(self.nframes):
-            current = self.get_structure_from_topology(frag_id, iframe, trajectory)
-            aligned, rmsd_error = self.align(current, reference)
-            alignment[iframe] = aligned
-            errors[iframe] = rmsd_error
-        self.aligned[frag_id] = alignment
-        if to_file:
-            self.save_topology(frag_id, geometries=alignment, fname='aligned_')
-        else:
-            return alignment, errors
+#       """
+#       if trajectory is None:
+#           trajectory = self.trajectory
+#       alignment = {}
+#       errors = {}
+#       geos = {}
+#       # Given frag_id, the reference structure is taken from the first frame.
+#       reference = self.get_structure_from_trajectory(frag_id, 0, trajectory)
+#       for iframe in range(self.nframes):
+#           current = self.get_structure_from_trajectory(frag_id, iframe, trajectory)
+#           aligned, rmatrix, centroid, rmsd_error = self.align(current, reference)
+#           alignment[iframe] = [aligned, rmatrix, centroid]
+#           errors[iframe] = rmsd_error
+#           geos[iframe] = aligned
+#       self.aligned[frag_id] = alignment
+#       self.errors[frag_id] = errors
+#       if to_file:
+#           self.save_trajectory(frag_id, geometries=geos, fname='aligned')
+#       else:
+#           return alignment
 
-    def get_average_structure(self, frag_id: int, method: str = 'zmat'):
-        """ Given a subsystem,  computes its average structure along the trajectory.
-
-        Arguments
-        ---------
-        frag_id : int
-            The unique number determining the molecule.
-        method : str
-            Method to use to average. Options are: `coords`, `zmat`.
-
-        """
-        if method == 'coordinates':
-            for iframe in range(self.Total_number_of_frames):
-                self.structure_averaged = np.mean(np.array(list(self.alignement.values()))[:, 0], axis=0)
-            self.save(frag_id, self.structure_averaged)
-
-    def compute_pair_correlation_function(self, box_range: tuple, bins: Union[list, np.ndarray],
-                                          solute_id=0):
-        """ Given the method computes the pair correlation function (pcf)
-        for the solvent fragments in 3 steps:
-        a) Get aligned geometries
-        b) Find elements that belong to the solvent
-        c) splitting space by bins and measuring the number of a certain type atoms in each
-        Should the pcf be computed only for solute molecule
+    def compute_pair_correlation_functions(self, grid_range=None, grid_bins=None):
+        """ Given the method computes the pair correlation function (histogram)
+        of each unique element.
 
         Parameters
         ---------
-        box_range : tuple(float)
-            Range of pcf box
-        bins : sequence or int
+        grid_range : np.ndarray(float)
+            Range of histogram box
+        bins :
             Bin specification for the numpy.histogramdd function. Any of the following:
             1) A sequence of arrays describing the monotonically increasing bin edges
             along each dimension.
             2) The number of bins for each dimension (nx, ny, … =bins)
             3) The number of bins for all dimensions (nx=ny=…=bins).
-        solute_id : int
-            The unique number determining the solute molecule. This molecule will be excluded!
 
         """
-        np.set_printoptions(precision=6,  threshold=np.inf)
         self.pcf = {}
-        coords = []
-        clen = 0
-        # Get all aligned structures for solvent fragments
-        for i, frag_id in enumerate(self.frags):
-            if frag_id != solute_id:
-                # Check if it was aligned before
-                if frag_id in self.aligned:
-                    aligned = self.aligned[frag_id]
-                else:
-                    aligned = self.align_along_trajectory(frag_id)[0]
-                if "uniques" in self.topology[frag_id]:
-                    elements = self.topology[frag_id]["uniques"]
-                else:
-                    elements = self.topology[frag_id]["elements"]
-                elen = len(elements)
-                elements = elements.reshape((elen, 1))
-                for iframe in range(self.nframes):
-                    coords.append(np.append(elements, aligned[iframe], axis=1))
-                    clen += elen
+        if grid_range is None:
+            if self.grid_range is None:
+                raise ValueError('`grid_range` is missing.')
+        else:
+            self.grid_range = grid_range
+        if grid_bins is None:
+            if self.grid_bins is None:
+                raise ValueError('`grid_bins` is missing.')
+        else:
+            self.grid_bins = grid_bins
         # Make array with coordinates
-        coords = np.array(coords).reshape((clen, 4))
-        for ielement in set(self.elements):
-            indices = np.where(coords[:, 0] == ielement)[0]
-            # Collecting all coordinates through all frames for a given element ielement
-            coordinates = coords[indices, 1:].astype('float64')
-            histogram, hedges = np.histogramdd(coordinates, range=box_range, bins=bins)
-            # Only saves once the edges because they are the same for all cases.
-            # TODO: confirm this statement.
-            if self.edges is None:
-                self.edges = hedges
-            self.pcf[ielement] = histogram
-        return self.edges, self.pcf
+        for ielement in self.unique_elements:
+            fcount = 0
+            for iframe in range(self.nframes):
+                coords = []
+                for position in ielement.alloc_traj[iframe]:
+                    coords.append(self.coordinates[iframe][position])
+                if coords != []:
+                    fcount += 1
+                    coords = np.array(coords, dtype=float)
+                    assert coords.shape[1] == 3
+
+                    # Collecting all coordinates through all frames for a given element ielement
+                    histogram, hedges = np.histogramdd(coords, range=self.grid_range, bins=self.grid_bins)
+                    if not hasattr(self, 'edges'):
+                        self.edges = hedges
+                    else:
+                        if not np.allclose(hedges, self.edges):
+                            raise Warning('There is a discrepancy between previously used grid.')
+                    if ielement.name in self.pcf:
+                        self.pcf[ielement.name] += histogram
+                    else:
+                        self.pcf[ielement.name] = histogram
+            ielement.frame_count = fcount
+        return self.pcf
+
+    def compute_charge_densities(self):
+        """Evaluate the total and electronic charge from the PCFs.
+
+        Returns
+        -------
+        charge_density, electron_density : np.array
+            Total charge density and electronic density evaluated in the cubic grid used
+            for the histogram, already sorted as in the cubic file format.
+        """
+        if self.pcf is None:
+            self.compute_pair_correlation_functions()
+        # Get grid size, assuming all the element PCFs are done in the same grid
+        random_element = self.unique_elements[0].name
+        electron_grid = np.zeros(self.pcf[random_element].shape)
+        charge_grid = electron_grid.copy()
+        for uelement in self.unique_elements:
+            if uelement.charge > 0:
+                ccoeff = uelement.zcharge - uelement.charge
+            else:
+                ccoeff = uelement.zcharge + abs(uelement.charge)
+            electron_grid += ccoeff*self.pcf[uelement.name]/uelement.frame_count
+            charge_grid += uelement.charge*self.pcf[uelement.name]/uelement.frame_count
+        delta = np.diff(self.edges)
+        dv = delta[0][0] * delta[1][0] * delta[2][0]
+
+        # Expand in cubic grid-point order
+        # and divide by volume element
+        charges = contract_grid(charge_grid)
+        electron_density = contract_grid(electron_grid)
+        charge_density = charges / dv
+        charge_density *= BOHR**3
+        electron_density /= dv
+        electron_density *= BOHR**3
+        return charge_density, electron_density

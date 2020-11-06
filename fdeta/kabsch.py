@@ -4,7 +4,7 @@
 #  project: https://github.com/charnley/rmsd
 #  license: https://github.com/charnley/rmsd/blob/master/LICENSE
 # -
-""" Calculate RMSD between two XYZ files.
+""" All functions related to the Kabsch algorithm.
 
 """
 
@@ -40,7 +40,7 @@ def fit(P, Q):
     return rmsd_best
 
 
-def kabsch(P, Q, output=False):
+def kabsch(P, Q, return_full=False):
     """ The Kabsch algorithm
 
     http://en.wikipedia.org/wiki/Kabsch_algorithm
@@ -59,6 +59,13 @@ def kabsch(P, Q, output=False):
     The optimal rotation matrix U is then used to
     rotate P unto Q so the RMSD can be caculated
     from a straight forward fashion.
+
+    Returns
+    -------
+    If return_full is True, then return the rotated
+    matrix P', the optimal rotation matrix U and
+    the root-mean square deviation.
+    Else, return just the rotation matrix U.
 
     """
 
@@ -83,18 +90,42 @@ def kabsch(P, Q, output=False):
     U = numpy.dot(V, W)
 
     # Rotate P
-    P = numpy.dot(P, U)
+    Pprime = numpy.dot(P, U)
 
-    if output:
-        return P, rmsd(P, Q)
-
-    return rmsd(P, Q)
+    if return_full:
+        return Pprime, U, rmsd(Pprime, Q)
+    else:
+        return U
 
 
 def centroid(X):
     """ Calculate the centroid from a vectorset X """
     C = sum(X)/len(X)
     return C
+
+
+def align_two_vectors(v0, v1):
+    r"""Find rotation matrix that aligns two vectors
+    to point in the same direction.
+
+    Parameters
+    ----------
+    v0, v1 : np.ndarray(3,)
+        Vectors to be aligned.
+
+    Returns:
+    rot_matrix :  np.ndarray((3, 3))
+        Rotation matrix that aligns the two vectors.
+    """
+    va = v0/np.linalg.norm(v0)
+    vb = v1/np.linalg.norm(v1)
+    c = np.dot(va, vb)
+    v = np.cross(va, vb)
+    s = np.linalg.norm(v)
+    # skew-symmetric cross-product matrix of v
+    sscp = np.array([[0, -v[2], v[1]], [v[2], 0, -v[0]], [-v[1], v[0], 0]])
+    rot_matrix = np.eye(3) + sscp + (np.dot(sscp, sscp)*((1. - c)/pow(s, 2)))
+    return rot_matrix
 
 
 def rmsd(V, W):
@@ -226,7 +257,7 @@ The script will return three RMSD values;
 
     if output:
 
-        V, r = kabsch(P, Q, output=True)
+        V, U, r = kabsch(P, Q, output=True)
         V += Qc
         write_coordinates(atomsP, V)
 

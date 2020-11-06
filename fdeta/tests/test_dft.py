@@ -7,7 +7,7 @@ Unit and regression test for the fdeta package.
 import os
 import numpy as np
 
-from fdeta.fdetmd.dft import compute_nad_lda
+from fdeta.dft import compute_nad_lda
 
 
 def test_functionals():
