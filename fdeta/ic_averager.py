@@ -22,7 +22,7 @@ else:
 
 rc('text', usetex=True)
 def plot_2Ddistrib(data: np.ndarray, index: list, bins: int = 36,
-                 x_label: str = "dihedral",  
+                 labels: list= [],  
               title: str = "", pos_range: bool = True):
     """Plots value occurrence vs value
     Parameters
@@ -49,8 +49,12 @@ def plot_2Ddistrib(data: np.ndarray, index: list, bins: int = 36,
     ax = fig.add_subplot(111)
     range_ = (0, 360) if pos_range else (-180, 180)
     ax.hist2d(data[index[0], :], data[index[1], :], bins=[bins,bins], range=(range_,range_))
-    ax.set_xlabel("{}".format(index[0]))
-    ax.set_ylabel("{}".format(index[1])) 
+    if not labels:
+        ax.set_xlabel("{}".format(index[0]))
+        ax.set_ylabel("{}".format(index[1]))
+    else:
+        ax.set_xlabel("{}".format(labels[0]))
+        ax.set_ylabel("{}".format(labels[1]))
     ax.set_title(title)
     return fig
 
