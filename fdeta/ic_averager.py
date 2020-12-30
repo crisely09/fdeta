@@ -14,6 +14,7 @@ from pyclustering.cluster.center_initializer import kmeans_plusplus_initializer
 import matplotlib.pyplot as plt
 from matplotlib import rc
 import sys
+from ctypes import cast, py_object
 if sys.version_info[0] < 3:
     from StringIO import StringIO
 else:
@@ -21,6 +22,65 @@ else:
 
 
 rc('text', usetex=True)
+vdict = {"dihedral": "dih", "d": "dih", "dih": "dih", "angle": "angle", "angles": "angle", "a": "angle", "b": "bond", "bond": "bond", "bonds": "bond"}
+
+# max-min funcs
+nthtolast = lambda x,y: x.index(sorted(x)[-y]) # index of n-th to last 
+maxidx = lambda x: x.index(max(x))  # index of max elem, i.e. nthtolast(x,1)
+minidx = lambda x: x.index(min(x))  # index of min elem, i.e. nthtolast(x,-1)
+
+def mindidx(l):
+    """
+    Note
+    ----
+    minimum dual index, i.e. given a list of lists returns index, index to get the minimum
+    e.g. mindidx([[10,9],[8,7]]) ==> [1,1]
+    
+    Parameters
+    ----------
+    l: list[lists]
+        list of lists of int/float
+        
+    Returns
+    -------
+    list
+        [idx0,idx1]
+    
+    """
+    flat = list(it.chain.from_iterable(l))
+    idx = minidx(flat)
+    tot = 0
+    didx = [0, 0]
+    for i in l:
+        if tot + len(i) <= idx: 
+            didx[0] += 1
+            tot += len(i)
+        else:
+            didx[1] = idx - tot
+            break
+    return didx
+    
+def slicestr(slc):
+    """
+    Note
+    ----
+    Gets a string representing the slice object, used for "source" in  ic_avg obtained from slicing
+    
+    Parameters
+    ----------
+    slc: slice object
+        slice object to obtain the string for
+        
+    Returns
+    -------
+    str
+        "{start}:{stop}:{step}"
+    """
+    start = slc.start if slc.start else ""
+    stop = slc.stop if slc.stop else ""
+    step = slc.step if slc.step else ""
+    return "{}:{}:{}".format(start, stop, step)
+
 def plot_2Ddistrib(data: np.ndarray, index: list, bins: int = 36,
                  labels: list= [],  
               title: str = "", pos_range: bool = True):
@@ -132,13 +192,397 @@ def plot_time_evo(data: np.ndarray, index: Union[list,int], y_label: str = "dihe
         ax.set_ylim(0, 360)
     return fig
 
+class group:
+    """
+    Object for a set of variables, most commonly dihedrals, corresponding to the same chemical group.
+    For instance 3 H in a methyl, or 2 H in an amino group, or 1 H in a hydroxy
+    """
+    def __init__(self, arr, avg_id, var="dih"):
+        """
+        arr: np.array, list, tuple
+            indexes of the angles in ic-numbering
+        avg_id: int
+            id of the averager the group refers to
+        var: str
+            type of variable. default is "dih"
+            uses vdict for dihedral/dih, angles/angle, etc...
+        """
+        if type(arr) in [list,tuple]:
+            arr = np.array(arr)
+        self.arr = arr
+        self.avg_id = avg_id  # id(ic_avg), works as pointer to the averager
+        self.var = vdict[var]
+        
+    def __repr__(self):
+        """
+        Note
+        ----
+        When calling group, it returns a string with ic-numbering and, if available, cartesian counting
+        """
+        if hasattr(self, "cart"):
+            return "IC: {}, Cart: {}".format(self.arr.tolist(), self.cart.tolist())
+        else:
+            return "IC: {}".format(self.arr.tolist())
+        
+    def __str__(self):
+        """
+        Note
+        ----
+        When converting group to a string (e.g. printing), it returns a string with ic-numbering and, if available, cartesian counting
+        """
+        if hasattr(self, "cart"):
+            return "IC: {}, Cart: {}".format(self.arr.tolist(), self.cart.tolist())
+        else:
+            return "IC: {}".format(self.arr.tolist())
+        
+    @staticmethod
+    def from_cart(cart, avg_id):
+        """
+        Note
+        ----
+        Obtains a group from indexes in cartesian counting
+        
+        Parameters
+        ----------
+        cart: np.arr, list, tuple
+            indexes in cartesian numbering
+        avg_id: int
+            id of the ic_avg the group refers to
+        """
+        if type(cart) in [list,tuple]:
+            cart = np.array(cart)
+        c_table = cast(avg_id, py_object).value.c_table
+        arr = np.array([c_table.index.get_loc(i) for i in cart])
+        gr = group(arr, avg_id)
+        gr._cart = cart
+        return gr
+    
+    @property
+    def cart(self):
+        """
+        Note
+        ----
+        Some properties are private attributes with property decorator.
+        Reduces the risk of the user messing with it, but allows skilled users to do so.
+        """
+        if not hasattr(self, "_cart"):
+            c_table = cast(self.avg_id, py_object).value.c_table
+            setattr(self, "_cart", np.array(c_table.index[self.arr]))
+        return getattr(self, "_cart")
+    
+    def get_basins(self, min_centers=2, max_centers=3, overwrite=False):
+        """
+        Note
+        ----
+        Obtains basins for all variables within the group
+        
+        Parameters
+        ----------
+        min_centers: int
+            minimum number of centers, default i 2
+        max_centers: int
+            maximum number of centers, default is 3
+        overwrite: bool
+            whether present basins should be overwritten or not, default is False
+        """
+        if overwrite or not hasattr(self,"_basins"):
+            avg = cast(self.avg_id, py_object).value
+            basins, centers = [], []
+            for i in self.arr:
+                b, c = avg.find_clusters(var=self.var, index=i, min_centers=min_centers, max_centers=max_centers)
+                basins.append(b), centers.append(c)
+            self._basins, self._centers = basins, centers
+            
+    @property
+    def basins(self):
+        """
+        Note
+        ----
+        Some properties are private attributes with property decorator.
+        Reduces the risk of the user messing with it, but allows skilled users to do so.
+        """
+        self.get_basins()
+        return self._basins
+        
+    @property
+    def centers(self):
+        """
+        Note
+        ----
+        Some properties are private attributes with property decorator.
+        Reduces the risk of the user messing with it, but allows skilled users to do so.
+        """
+        self.get_basins()
+        return self._centers
+        
+    @property
+    def selected(self):
+        """
+        Note
+        ----
+        Some properties are private attributes with property decorator.
+        Reduces the risk of the user messing with it, but allows skilled users to do so.
+        
+        This atom will be used to pick a basin, then the other atoms are assigned in such a way 
+        that the difference is the same as the average one in the basin.
+        e.g. for methyl, H1-H2 =~ 120°
+        """
+        if hasattr(self, "_selected"):
+            return self._selected
+        else:
+            if len(self.basins) == 1:
+                self._selected = 0
+            else:
+                print("the \"selected\" atom has not been set yet")
+                return None
+        
+    @selected.setter
+    def selected(self, idx):
+        """
+        Note
+        ----
+        Setter for self._selected
+        
+        Parameters
+        ----------
+        idx: int
+            the 
+        """
+        if hasattr(self, "_selected") and self._selected != idx:
+            del self._avg_values
+        self._selected = idx
+        
+    @property
+    def weights(self):
+        """
+        Note
+        ----
+        Some properties are private attributes with property decorator.
+        Reduces the risk of the user messing with it, but allows skilled users to do so.
+        
+        weight of each basin, i.e. number of frames in each basin
+        """
+        if not hasattr(self,"_weights"):
+            weights = []
+            for basins in self.basins:
+                weights.append([len(basin) for basin in basins])
+            self._weights = weights
+        return self._weights
+    
+    @property
+    def prominence(self):
+        """
+        Note
+        ----
+        weight difference between the first and second most common basin
+        """
+        if not hasattr(self,"_prominence"):
+            self._prominence = [sorted(i)[-1] - sorted(i)[-2] for i in self.weights]
+        return self._prominence
+            
+    def select_most_prominent(self):
+        """
+        Note
+        ----
+        Selects the angle with largest prominence
+        """
+        if len(self.basins) == 1:
+            self._selected = 0
+        else:
+            self._selected = self.prominence.index(max(self.prominence))
+            
+    def select_least_prominent(self):
+        """
+        Note
+        ----
+        Selects the angle with smallest prominence
+        """
+        if len(self.basins) == 1:
+            self._selected = 0
+        else:
+            self._selected = self.prominence.index(min(self.prominence))
+            
+    def select_prominence(self,minormax):
+        """
+        Note
+        ----
+        Selects the angle with largest/smallest prominence
+        
+        Parameters
+        ----------
+        minormax: str/func
+            min/max, "min"/"max", "minimum"/"maximum", "lest"/"most", "less"/"more"
+        """
+        if minormax in ["min", "minimum", "least", "less", min]:
+            self.select_least_prominent
+        elif minormax in ["max", "maximum", "most", "more", max]:
+            self.select_most_prominent
+        else:
+            raise ValueError("Use min/minimum/least/less or max/maximum/most/more")
+            
+    def res_analysis(self):
+        """
+        Note
+        Analysis of "residuals". 
+        i.e. looks for the combination of basins which minimises difference between 
+        angle differences for the basins centers and average angle differences over the trajectory
+        """
+        if len(self.centers) == 1:
+            res = [0 for c in self.centers[0]]
+        else:
+            avg = cast(self.avg_id, py_object).value
+            res = [[0 for i in j] for j in self.centers]
+            for na,angle in enumerate(self.centers):
+                others = [(m,i) for m,i in enumerate(self.arr) if m != na]  # (numbering in group, numbering in ic)
+                mdiffs = [(conv_d(avg.dih[self.arr[na],:] - avg.dih[self.arr[i[1]],:])).mean() for i in others]
+                for nc,c in enumerate(self.centers[na]):
+                    for o in others:
+                        expected = conv_d(c - mdiffs[o[0]])   # expected value based on avg diff
+                        res[na][nc] += min([i  - expected for  i in self.centers[o[0]]])
+            self._res = res
+            
+    @property
+    def res(self):
+        """
+        Note
+        ----
+        Sum of residuals for each center
+        """
+        if not hasattr(self, "res"):
+            self.res_analysis()
+        return self._res
+    
+    def select_res(self):
+        """
+        Note
+        ----
+        Selects atom with the lowest residuals
+        """
+        self.selected = mindidx(self.res)[0]
+            
+    def get_avg_values(self, basin=1):  # TODO: overwrite issues
+        """
+        Note
+        ----
+        Gets average values for the desired basin
+        
+        Parameters
+        ----------
+        basin: int/"res"
+            if basin=n the n-th to last basin per weight is used (1=first basin, 2=second basin...)
+            "res" uses the basin that minimises residual sums
+            
+        Returns
+        -------
+        the average values
+        """
+        if not hasattr(self,"_avg_values"):
+            vals = []
+            if type(basin) == int:
+                tosub = self.centers[self.selected][nthtolast(self.weights[self.selected], basin)]  
+            elif basin == "res":
+                self.select_res
+                tosub = self.centers[self.selected][mindidx(self.res)[1]]
+            else:
+                raise ValueError("unrecognised value for \"basin\": it must be an implemented method to select the basin")
+            avg = cast(self.avg_id, py_object).value
+            for n, basins in enumerate(self.basins):
+                if n == self.selected:
+                    vals.append(tosub)
+                else:
+                    diff = (conv_d(avg.dih[self.arr[self.selected],:] - avg.dih[self.arr[n],:])).mean()
+                    vals.append(conv_d(tosub - diff))
+            self._avg_values = vals
+        return self._avg_values
+
+def intersect_lists(ll):  # tested to be faster than other possible methods
+    """
+    Note
+    ----
+    Given a list of lists, returns the list of elements present in all of them.
+    
+    Parameters
+    ----------
+    ll: list[lists]
+        list of lists (generally of frame numbers)
+    
+    Returns
+    -------
+    list
+        the intersection
+    """
+    intersec = set(ll[0])
+    for l in ll[1:]:
+        intersec = intersec & set(l)
+    return list(intersec)
+
+def intersect_groups(grouplist, basin=1):
+    """
+    Note
+    ----
+    Given a list of groups, returns the frames of the common basin,
+    i.e. the intersection of the desired basins for the selected atoms of each group
+    
+    Parameters
+    ----------
+    basin: int/"res"
+        if basin=n the n-th to last basin per weight is used (1=first basin, 2=second basin...)
+        "res" uses the basin that minimises residual sums
+    
+    Returns
+    -------
+    list
+        The intersection of these basins (list of framenumbers)
+    """
+    if type(basin) == int:
+        get_frames = lambda gr: gr.basins[gr.selected][nthtolast(gr.weights[gr.selected], basin)]  
+    elif basin == "res":
+        def get_frames(gr):
+            gr.select_res
+            return gr.centers[gr.selected][mindidx(gr.res)[1]]
+    ll = [get_frames(gr) for gr in grouplist]
+    return intersect_lists(ll)
+
+def agreement_lists(ll):
+    """
+    Parameters
+    ----------
+    ll: list[lists]
+        
+    Returns
+    -------
+    float
+        the percentage of frames which appear in all basins
+    """
+    return len(intersect_lists(ll))/max([len(l) for l in ll])
+
+def agreement_groups(grouplist, basin=1):
+    """
+    Parameters
+    ----------
+    ll: list[groups]
+        
+    Returns
+    -------
+    float
+        the percentage of frames which appear in all selected basins
+    """
+    if type(basin) == int:
+        get_frames = lambda gr: gr.basins[gr.selected][nthtolast(gr.weights[gr.selected], basin)]  
+    elif basin == "res":
+        def get_frames(gr):
+            gr.select_res
+            return gr.centers[gr.selected][mindidx(gr.res)[1]]
+    ll = [get_frames(gr) for gr in grouplist]
+    return agreement_lists(ll)
+
 class ic_averager:
     """Object for averaging of molecule A in internal coordinates.
     Allows different methods to detect and fix issues such as quasilinear angles and rotating groups.
     """
 
-    def __init__(self,  bonds: np.ndarray = np.array([]), angles: np.ndarray = np.array([]),
-                 dih: np.ndarray = np.array([]), zmat1: Union[cc.Zmat, None] = None,  #todo check Union
+    def __init__(self, source: str, bonds: np.ndarray = np.array([]), angles: np.ndarray = np.array([]),
+                 dih: np.ndarray = np.array([]), zmat1: Union[cc.Zmat, None] = None,  
                  c_table: pd.DataFrame = pd.DataFrame()):
         """
         Parameters
@@ -154,6 +598,7 @@ class ic_averager:
         c_table: pd.DataFrame
             conversion table from cart1 to zmat1
         """
+        self.source = source 
         self.bonds = bonds
         self.angles = angles
         self.dih = dih
@@ -172,6 +617,40 @@ class ic_averager:
         else:
             raise AttributeError("Wrong shape for bond array")
             
+    def __getitem__(self, key):
+        """
+        Parameters
+        ----------
+        key: slice/int
+            the slicing index(es)
+        
+        Returns
+        -------
+        if key is int, cc.zmat
+        if key is slice, ic_avg
+        """
+        if type(key) == int:
+            sliced = self.zmat1.copy()
+            sliced._frame["bonds"] == self.bonds[key] if self.avg_bond_angles == False else self.bonds
+            sliced._frame["angles"] == self.angles[key] if self.avg_bond_angles == False else self.angles
+            sliced._frame["dihedral"] = self.dih[key]
+        else:
+            slice_ = slicestr(key)
+            source = "from {} with {}".format(id(self), slice_)
+            sliced = ic_averager(source, self.bonds[key], self.angles[key], self.dih[key], self.zmat1, self.c_table)
+        return sliced
+    
+    def __repr__(self):
+        """
+        Note
+        ----
+        Representation for ic_avg, returns natoms, nframes, zmat1
+        """
+        string = "{} atoms for {} frames".format(self.natoms,self.nframes)
+        frame = self.zmat1.frame_.__str__()
+        return "{}\n{}".format(string, frame)
+        
+    
     def copy(self):
         """Copies the ic_averager        
         """
@@ -179,7 +658,7 @@ class ic_averager:
         return c.copy(self)
         
     @classmethod
-    def from_arrays(cls, atoms: Union[np.ndarray,list], arr: np.ndarray, int_coords_file: str = "internal_coordinates.npz",
+    def from_arrays(cls, source, atoms: Union[np.ndarray,list], arr: np.ndarray, int_coord_file: str = "internal_coordinates.npz",
                                save: bool =True, avg_bond_angles: bool = False, dec_digits: int = 3):
         """Retrieves all internal coordinates from aligned trajectory in cartesians.
     
@@ -187,7 +666,7 @@ class ic_averager:
         ----------
         aligned_fn : str
             Filename of the fragment aligned over all trajectory.
-        int_coords_file : str
+        int_coord_file : str
             Filename for writing all the internal coordinates. ".npy" and ".npz" can be
             detected, otherwise ".txt" separate files are used.
         save : bool
@@ -197,7 +676,8 @@ class ic_averager:
         dec_digits : int
             Used only for ".txt" files, number of decimal digits
         """
-    
+        if not source:
+            source = "from arrays, saved in {}".format(int_coord_file)
         t1 = time.time()
         nframes, natoms =  arr.shape[:2]
         bonds = np.zeros((natoms, nframes))
@@ -224,23 +704,23 @@ class ic_averager:
                 bonds = bonds.mean(axis = 1)
                 angles = angles.mean(axis = 1)
             fmt = "{{%.f}}".format(dec_digits)
-            if int_coords_file[-4:] == ".npy":
-                np.save(int_coords_file, np.array([bonds, angles, dih]))
-                print("saved bonds, angles, dihedrals in {}".format(int_coords_file))
-            elif int_coords_file[-4:] == ".npz":
-                np.savez(int_coords_file, bonds=bonds, angles=angles, dihedrals=dih)
-                print("saved bonds, angles, dihedrals in {}".format(int_coords_file))
+            if int_coord_file[-4:] == ".npy":
+                np.save(int_coord_file, np.array([bonds, angles, dih]))
+                print("saved bonds, angles, dihedrals in {}".format(int_coord_file))
+            elif int_coord_file[-4:] == ".npz":
+                np.savez(int_coord_file, bonds=bonds, angles=angles, dihedrals=dih)
+                print("saved bonds, angles, dihedrals in {}".format(int_coord_file))
             else:
-                int_coords_file += ".txt" if "txt" not in int_coords_file else ""
-                np.savetxt(int_coords_file[:-4] + "_bonds.txt", np.array(bonds), fmt=fmt)
-                np.savetxt(int_coords_file[:-4] + "_angles.txt", np.array(angles), fmt=fmt)
-                np.savetxt(int_coords_file[:-4] + "_dihedrals.txt", np.array(dih), fmt=fmt)
+                int_coord_file += ".txt" if "txt" not in int_coord_file else ""
+                np.savetxt(int_coord_file[:-4] + "_bonds.txt", np.array(bonds), fmt=fmt)
+                np.savetxt(int_coord_file[:-4] + "_angles.txt", np.array(angles), fmt=fmt)
+                np.savetxt(int_coord_file[:-4] + "_dihedrals.txt", np.array(dih), fmt=fmt)
                 print("saved bonds,angles,dihedrals in {} respectively".format(", ".join(
-                    [int_coords_file[:-4] + i + int_coords_file[-4:] for i in["_bonds", "_angles", "_dihedrals"]])))
-        return cls(bonds, angles, dih, zmat1, c_table)
+                    [int_coord_file[:-4] + i + int_coord_file[-4:] for i in["_bonds", "_angles", "_dihedrals"]])))
+        return cls(source, bonds, angles, dih, zmat1, c_table)
 #       
     @classmethod
-    def from_aligned_cartesian_file(cls, aligned_fn: str = "aligned0.xyz", int_coords_file: str = "internal_coordinates.npz",
+    def from_aligned_cartesian_file(cls, aligned_fn: str = "aligned0.xyz", int_coord_file: str = "internal_coordinates.npz",
                                save: bool =True, avg_bond_angles: bool = False, dec_digits: int = 3):
         """Retrieves all internal coordinates from aligned trajectory in cartesians.
     
@@ -248,7 +728,7 @@ class ic_averager:
         ----------
         aligned_fn : str
             Filename of the fragment aligned over all trajectory.
-        int_coords_file : str
+        int_coord_file : str
             Filename for writing all the internal coordinates. ".npy" and ".npz" can be
             detected, otherwise ".txt" separate files are used.
         save : bool
@@ -258,7 +738,6 @@ class ic_averager:
         dec_digits : int
             Used only for ".txt" files, number of decimal digits
         """
-    
         t1 = time.time()
         # Get total number of lines
         tot_lines = int(str(sp.check_output(["wc", "-l", aligned_fn]))[2:].split()[0])
@@ -296,20 +775,20 @@ class ic_averager:
                 bonds = bonds.mean(axis = 1)
                 angles = angles.mean(axis = 1)
 #            fmt = "{{%.f}}".format(dec_digits)
-            if int_coords_file[-4:] == ".npy":
-                np.save(int_coords_file, np.array([bonds, angles, dih]))
-                print("saved bonds, angles, dihedrals in {}".format(int_coords_file))
-            elif int_coords_file[-4:] == ".npz":
-                np.savez(int_coords_file, bonds=bonds, angles=angles, dihedrals=dih)
-                print("saved bonds, angles, dihedrals in {}".format(int_coords_file))
+            if int_coord_file[-4:] == ".npy":
+                np.save(int_coord_file, np.array([bonds, angles, dih]))
+                print("saved bonds, angles, dihedrals in {}".format(int_coord_file))
+            elif int_coord_file[-4:] == ".npz":
+                np.savez(int_coord_file, bonds=bonds, angles=angles, dihedrals=dih)
+                print("saved bonds, angles, dihedrals in {}".format(int_coord_file))
             else:
-                int_coords_file += ".txt" if "txt" not in int_coords_file else ""
-                np.savetxt(int_coords_file[:-4] + "_bonds.txt", np.array(bonds))
-                np.savetxt(int_coords_file[:-4] + "_angles.txt", np.array(angles))
-                np.savetxt(int_coords_file[:-4] + "_dihedrals.txt", np.array(dih))
+                int_coord_file += ".txt" if "txt" not in int_coord_file else ""
+                np.savetxt(int_coord_file[:-4] + "_bonds.txt", np.array(bonds))
+                np.savetxt(int_coord_file[:-4] + "_angles.txt", np.array(angles))
+                np.savetxt(int_coord_file[:-4] + "_dihedrals.txt", np.array(dih))
                 print("saved bonds,angles,dihedrals in {} respectively".format(", ".join(
-                    [int_coords_file[:-4] + i + int_coords_file[-4:] for i in["_bonds", "_angles", "_dihedrals"]])))
-        return cls(bonds, angles, dih, zmat1, c_table)
+                    [int_coord_file[:-4] + i + int_coord_file[-4:] for i in["_bonds", "_angles", "_dihedrals"]])))
+        return cls(aligned_fn, bonds, angles, dih, zmat1, c_table)
     
     @classmethod
     def from_int_coord_file(cls, aligned_fn: str = "", int_coord_file: str = ""):
@@ -318,7 +797,7 @@ class ic_averager:
         ----------
         aligned_fn : str
             Filename of the fragment aligned over all trajectory. Needed for zmat1, c_table
-        int_coords_file : str
+        int_coord_file : str
             File with all the internal coordinates. ".npy" and ".npz" can be
             detected, otherwise ".txt" separate files are used.
         """
@@ -385,7 +864,7 @@ class ic_averager:
         cart = str2cart(frame_str)
         c_table = cart.get_construction_table()
         zmat1 = str2zmat(frame_str, c_table)
-        return cls(bonds, angles, dih, zmat1, c_table)
+        return cls(int_coord_file, bonds, angles, dih, zmat1, c_table)
     
     def correct_quasilinears(self, method: str = "std"):
         """ Fixes wrong averaging for dihedrals around + or - 180.
@@ -412,136 +891,95 @@ class ic_averager:
             except:
                 print("zmat not defined yet, so only setting self.use_c")
     
-    def detect_rotating_groups(self, method: str = "std", thresh_min: Union[float, int] = 90, thresh_max: Union[float, int] = 180, group_name: str = "rotate"):
-        """Find the freely rotating dihedrals
+    def std_analysis(self, var="dih", thresh_min: Union[float, int] = 90, thresh_max: Union[float, int] = 180, group_name: str = "rotate"):
+        """
         Parameters
         ----------
-        method: str
-            method to detect dihedrals. Options:
-                "std": dih for which the minimum std deviation between (-180,180) and (0,360) is between thres_min and thresh_max
+        var: str
+            variable type ("dih"/"dihedral", angle, ...)
         thresh_min: float or int
             threshold for minimum std for the dihedral on the most appropriate range
         thresh_max: float or int
             threshold for maximum std for the dihedral on the most appropriate range
+        group_name str
+            name to use for the groups found
                 
         Sets
         ----
-        self.[group_name]: np.array
-            indexes of rotating dihedral. Nb this is numpy simple (0-natoms) numbering for dih,
-            not pandas zmat._frame.index, i.e. the cartesian numbering.
+        self.[group_name]: list[groups]
+            list of detected groups
         """
-        if method == "std":
+        if vdict[var] == "dih":
             detected = np.arange(3,self.natoms)[np.logical_and(np.minimum(self.dih_std[3:], self.dih_c_std[3:]) > thresh_min,np.minimum(self.dih_std[3:], self.dih_c_std[3:]) < thresh_max)]
-            
-            setattr(self, group_name, detected)
-            print("{} atoms have been detected with the specified thresholds".format(detected.shape[0]))  
-            print("array numbering: {}".format(", ".join(list(map(str,detected)))))
-            print("Cartesian numbering: {}".format(", ".join(list(map(str,self.zmat1._frame.index[detected])))))
+            group_list, done = [], []
+            for i  in detected:
+                if i not in done:
+                    b2s_cart = self.c_table[self.c_table["b"]==self.c_table.iloc[i]["b"]].index  # bound to the same, cartesian numbering
+                    b2s_arr = [self.c_table.index.get_loc(j) for j in b2s_cart]  # passing to arr numbering
+                    done.extend(b2s_arr)
+                    gr = group(b2s_arr, id(self), var="dih")
+                    setattr(gr,"cart", b2s_cart)  # not "gr.cart = because @property
+                    group_list.append(gr)
+        else:
+            group_list = np.arange(3,self.natoms)[np.logical_and(getattr(self,var+"s").std(axis=1) > thresh_min, getattr(self,var).std(axis=1) < thresh_max)]  # "bond"=> "bonds", "angle"=> "angles"
+        setattr(self, group_name, group_list)
+        print("Obtained {} with thresholds: [{},{}]".format(group_name, thresh_min, thresh_max))
+        print("Resulting in groups:\n {}".format("    ".join(group_list)))
     
     def find_clusters(self, var: str = "", index: Union[None, int] = None, min_centers: int = 1, max_centers: int =3):
         """
-        TODO:docstring
+        Note
+        ----
+        Clustering ML algorithm. Slight randomness due to starting values.
+        
+        Parameters
+        ----------
+        var: str
+            variable type ("dih", "angle", "bond")
+        index: int
+            atom to analyse
+        min_centers: int
+            minimum number of centers
+        max_centers: maximum number of centers
+        
+        Returns
+        -------
+        tuple
+            basins (list of lists), centers(list)
+        
         """
         using_c = False
         if index == None:
             raise ValueError("You must specify \"index\".")
         if var == "":
             print("no variable type specified, supposing it is \"dihedral\"")
-            var = "dihedral"
-        if var == "dihedral":
+            var = "dih"
+        var = vdict[var]
+        if var == "dih":
             if hasattr(self, "use_c"):
                 (arr, using_c) = (self.dih_c[index],True) if index in self.use_c else (self.dih[index], False)
             else:
                 print("Watch out! No correction of quasilinear dihedrals has been performed thus far!")
-                arr = self.dih
-            clustdictname = "dihclustdict"
-            centdictname = "dihcentdict"
+                arr = self.dih[index]
         elif var == "angle":
             arr = self.angles[index]
-            clustdictname = "angleclustdict"
-            centdictname = "anglecentdict"
         elif var == "bond":
             arr = self.bonds[index]
-            clustdictname = "bondclustdict"
-            centdictname = "bondcentdict"
         else: 
             raise ValueError("Use either \"dihedral\" or \"angle\" or \"bond\".")
         arr = arr.reshape(-1,1)
         initial_centers = kmeans_plusplus_initializer(arr, min_centers).initialize()
         xmeans_instance = xmeans(arr, initial_centers, max_centers)
         xmeans_instance.process()
-        if hasattr(self, clustdictname):
-            dict_ = getattr(self, clustdictname)
-        else:
-            dict_ = {}
-        dict_[index] = list(map(np.asarray, xmeans_instance.get_clusters()))
-        setattr(self, clustdictname, dict_)
-        if hasattr(self, centdictname):
-            dict_ = getattr(self, centdictname)
-        else:
-            dict_ = {}
+        basins = list(map(np.asarray, xmeans_instance.get_clusters()))
         centers = [conv_d(i) for i in list(it.chain.from_iterable(xmeans_instance.get_centers()))] if using_c else list(it.chain.from_iterable(xmeans_instance.get_centers()))
-        dict_[index] = list(map(np.asarray, centers))
-        setattr(self, centdictname, dict_)
-        
+        return basins, centers
 
-    def fix_rotate(self, method: str = "pick_first", group_name: str = "rotate"):
-        """Fixes the issue of rotating groups.
-        Parameters
-        ----------
-        method: str
-            method to use. Options:
-                "pick_first": pick dihedrals for self.rotate from the first frame
-                "major_basin": detects groups of atoms bound to the same atom (e.g. methyl), 
-                               analyses the one among these that has most clear major/minor conformations
-                               selects the major one, and applies averaged difference to the other angles
-                "minor_basin": the same as major but selects the minor basin                                
-        """
-        if method == "pick_first":
-            self.zmat._frame["dihedral"].values[getattr(self, group_name)] = self.zmat1._frame["dihedral"].values[getattr(self, group_name)]
-        if method in ["major_basin","minor_basin"]:
-            groups=[]  # becomes list of 1D-arrays
-            for r  in getattr(self, group_name):
-                if r not in list(it.chain.from_iterable(groups)):
-                    b2s_cart = self.c_table[self.c_table["b"]==self.c_table.iloc[r]["b"]].index  # bound to the same, cartesian numbering
-                    b2s_arr = [self.c_table.index.get_loc(i) for i in b2s_cart]  # passing to arr numbering
-                    groups.append(b2s_arr)
-            for gr in groups:  # gr is an array
-                if len(gr)==1: # if only 1 rotating in gr,  e.g. H in OH
-                    if not hasattr(self,"dihclustdict") or gr[0] not in self.dihclustdict.keys():
-                        self.find_clusters(index = gr[0], min_centers = 2, max_centers = 3, var = "dihedral")
-                    weights = [len(i) for i in self.dihclustdict[gr[0]]]
-                    main = weights.index(max(weights)) if method=="major_basin" else weights.index(sorted(weights)[-2])
-                    self.zmat._frame["dihedral"].values[gr[0]] = self.dihcentdict[gr[0]][main]
-                else:  # if more than 1 rotating in gr, e.g. methyl
-                    weights = []  # will be list of lists with basin weights per dih in group
-                    sort_weights = []  # same but ordered
-                    prom = []  # prominence for each d in gr
-                    for n,d in enumerate(gr):  # n is numbering within group, d is numbering for dih
-                        if not hasattr(self,"dihclustdict") or d not in self.dihclustdict.keys():
-                            self.find_clusters(index = d, min_centers = 2, max_centers = 3, var = "dihedral")
-                        weights.append([len(i) for i in self.dihclustdict[d]])
-                        sort_weights.append(sorted(weights[n]))
-                        prom.append(sort_weights[n][-1] - sort_weights[n][-2])
-                    topick = prom.index(max(prom))  # best n to pick the major basin, use gr[topick] to get d
-                    main = weights[topick].index(max(weights[topick])) if method=="major_basin" else weights[topick].index(sorted(weights[topick])[-2])
-                    tosub = self.dihcentdict[gr[topick]][main]
-                    for n,d in enumerate(gr):  # n is numbering within group, d is numbering for dih
-                        if n == topick:
-                            self.zmat._frame["dihedral"].values[d] = tosub 
-                        else:
-                            diff = (conv_d(self.dih[gr[topick],:] - self.dih[d,:])).mean()
-                            self.zmat._frame["dihedral"].values[d] = conv_d(tosub - diff)
                         
-    def average_int_coords(self, out_file: str = "averaged.xyz", overwrite: bool = False,
+    def average(self, out_file: str = "averaged.xyz", overwrite: bool = False,
                            view: bool = True, viewer: str = "avogadro",
                            correct_quasilinears: str = "std",
-                           detect_rotate: str = "std",
-                           thresh_rot: Union[float, int] = 90,
-                           fix_rotate: str = "pick_first",
-                           detect_osc: str = "std",
-                           thresh_osc: Union[float, int] = 37.5,
-                           fix_osc: str = "major_basin"):
+                           basin=1):
         """Averages the internal coordinates. Rotate/ing refers to fully/freely rotating groups,
         oscillate/ing refers to groups oscillating between two conformers.
         
@@ -552,34 +990,15 @@ class ic_averager:
         overwrite: bool
             whether out_file can be overwritten. if False it creates averaged_n.xyz with n=1,2...
         correct_quasilinears: str
-            how quasilinear dihedrals should be corrected. "no" to skip
-        detect_rotate: str
-            method to detect rotation. "no" to skip
-        thresh_rot: float or int
-            used as thresh_min for self.detect_rotate
-        fix_rot: str
-            method to select dihedrals for rotating groups. "no" to skip"
-        detect_osc: str
-            method to detect rotation. "no" to skip
-        thresh_osc: float or int
-            used as thresh_min for self.detect_rotate(group_name="oscillate"), thresh_max is set to thresh_rot
-        fix_osc: str
-            method to select dihedrals for oscillating groups. "no" to skip"    
-        Returns
+            how quasilinear dihedrals should be corrected. "no" to skip  
+        Sets
         -------
-        cc.Zmat
-            the averaged structure
+        self.zmat
+            cc.Zmat of the averaged structure
         """
-        print("tresholds: {}, {}".format(thresh_osc,thresh_rot))
-        options = {"correct_quasilinears": ["no", "std"],
-                   "detect_rotate": ["no", "std", "stored"],
-                   "fix": ["no", "pick_first", "major_basin","minor_basin"]}
+        options = {"correct_quasilinears": ["no", "std"]}
         if correct_quasilinears not in options["correct_quasilinears"]:
             raise ValueError("correct_quasilinears can be among {}".format(", ".join(options["correct_quasilinears"])))
-        if detect_rotate not in options["detect_rotate"]:
-            raise ValueError("detect_rotate can be among {}".format(", ".join(options["detect_rotate"])))
-        if fix_rotate not in options["fix"] or fix_osc not in options["fix"]:
-            raise ValueError("fixing methods can be among {}".format(", ".join(options["fix"])))
             
         self.zmat = self.zmat1.copy()
         self.zmat._frame["bonds"] == self.bonds if self.avg_bond_angles else self.bonds.mean(axis=1) 
@@ -588,28 +1007,12 @@ class ic_averager:
         
         if correct_quasilinears != "no":
             self.correct_quasilinears(correct_quasilinears)
-#            print("corrected quasilinears")
-        if detect_rotate != "no":  # all acting on group_name="rotate", which is default
-            if detect_rotate == "std":
-                self.detect_rotating_groups(method = "std", thresh_min = thresh_rot)
-            elif detect_rotate == "stored":
-                pass
-            else:
-                raise ValueError("Only \"std\" is implemented now as rotation detection")
-            if fix_rotate != "no":
-                self.fix_rotate(method = fix_rotate)
-#                print("fixed rotate with method: {}".format(fix_rotate))
-        if detect_osc != "no":  # all acting on group_name="osc"
-            if detect_osc == "std":
-                self.detect_rotating_groups(method = "std", thresh_min = thresh_osc, thresh_max = thresh_rot, group_name = "osc")
-            elif detect_osc == "stored":
-                pass
-            else:
-                raise ValueError("Only \"std\" is implemented now as rotation detection")
-            if fix_osc != "no":
-                print("about to fix osc")
-                self.fix_rotate(method = fix_osc, group_name = "osc")  
-#                print("fixed oscillate with method: {}".format(fix_osc))
+        builtin = ["bonds", "angles", "dih", "source", "avg_bond_angles", "c_table", "zmat1", "zmat", "cart", "natoms", "nframes"]
+        groupsets = [i for i in self.__dict__.keys() if i not in builtin]  # no builtins
+        groupsets = [i for i in groupsets if type(i[0]) == group]  # only if first element is a group
+        for gs in groupsets:
+            for gr in gs:
+                self.zmat._frame["dihedral"].values[gs.arr] = gs.get_avg_values(basin=basin)
         self.cart = self.zmat.get_cartesian()
         if overwrite or not os.path.exists(out_file):
             self.cart.to_xyz(out_file)
