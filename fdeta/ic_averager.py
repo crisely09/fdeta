@@ -22,7 +22,9 @@ else:
 
 
 rc('text', usetex=True)
-vdict = {"dihedral": "dih", "d": "dih", "dih": "dih", "angle": "angle", "angles": "angle", "a": "angle", "b": "bond", "bond": "bond", "bonds": "bond"}
+vdict = {"dihedral": "dih", "d": "dih", "dih": "dih",
+         "angle": "angle", "angles": "angle", "a": "angle", 
+         "b": "bond", "bond": "bond", "bonds": "bond"}
 
 # max-min funcs
 nthtolast = lambda x,y: x.index(sorted(x)[-y]) # index of n-th to last 
@@ -160,7 +162,7 @@ def plot_distrib(data: np.ndarray, index: Union[list,int], bins: int = 36,
         the histogram with distribution of data[i,:] for i in index
     """
     fig = plt.figure(figsize=(20, 10), dpi=150)
-    var = vdict[var]
+    var = vdict[var] if var in vdict.keys() else var
     ax = fig.add_subplot(111)
     if type(index) == int:
         index = [index]
@@ -207,7 +209,7 @@ def plot_time_evo(data: np.ndarray, index: Union[list,int], var: str = "dihedral
         the value vs t of data[i,:] for i in index
     """
     x = np.arange(data.shape[1])
-    var = vdict[var]
+    var = vdict[var] if var in vdict.keys() else var
     fig = plt.figure(figsize=(20, 10), dpi=150)
     ax = fig.add_subplot(111)
     if type(index) == int:
@@ -250,7 +252,7 @@ class group:
             arr = np.array(arr)
         self.arr = arr
         self.avg_id = avg_id  # id(ic_avg), works as pointer to the averager
-        self.var = vdict[var]
+        self.var = vdict[var] if var in vdict.keys() else var
         
     def __repr__(self):
         """
@@ -745,6 +747,67 @@ class ic_averager:
             self.avg_bond_angles = False # full distribution of bonds and angles
         else:
             raise AttributeError("Wrong shape for bond array")
+    
+    def add_pseudo(self, name, arr):
+        """
+        Note
+        ----
+        Simply sets self.name = arr but checks there are nframe values
+        
+        Parameters
+        ----------
+        name: str
+            desired name for the pseudo coordinate
+        arr: np.array
+            the array of pseudo coordinate values
+            
+        Sets
+        ----
+        self.name
+        """
+        nframes = arr.shape[0] if len(arr.shape) == 1 else arr.shape[1]
+        if nframes != self.nframes:
+            raise ValueError("The number of frames does not match!!")
+        setattr(self, name, arr)
+        
+    def pseudos_from(self, var="", **kwargs):
+        """
+        Note
+        ----
+        if the pseudocoordinate only depends on 1 type of coordinates (e.g. only bonds), use var="bonds",
+        and specify the function to obtain the pseudo coordinate from the bonds of a frame.
+        If the pseudocoordinate depends on more types of coordinates, leave var="" (default) and provide a function
+        which accepts **kwargs and uses kwargs["bonds"], kwargs["angles"], kwargs["dih"]
+        
+        Parameters
+        ----------
+        var: str
+            the variable type to use to obtain pseudo, if only one
+            otherwise use default, which is ""
+        **kwargs: dict
+            "pseudo_name"1: function1
+            "pseudo_name2": function2
+        
+        Sets
+        ----
+        self.pseudo = np.array(k, nframes) 
+            k depends on your function, most commonly 1
+        """
+        if var:  # we can use apply_along_axis
+            var = vdict[var]
+            arr = getattr(self, var) if var == "dih" else getattr(self+"s",var)
+            for coord, func in kwargs.items():
+                pseudo = np.apply_along_axis(func, 0, arr)
+                if len(pseudo.shape) == 1:
+                    pseudo = pseudo.reshape(1,-1)
+                setattr(self, coord, pseudo)
+        else:
+            pseudo = np.zeros(self.nframes)
+            for f in range(self.nframes):
+                bonds, angles, dih = self.bonds[:, f], self.angles[:, f], self.dih[:,f]
+                for coord, func in kwargs.items():
+                    pseudo[f] = func(bonds=bonds, angles=angles, dih=dih)
+            setattr(self, coord, pseudo)    
             
     def __getitem__(self, key):
         """
@@ -1181,7 +1244,7 @@ class ic_averager:
         self.[group_name]: list[groups]
             list of detected groups
         """
-        var = vdict[var]
+        var = vdict[var] if var in vdict.keys() else var if var in vdict.keys() else var
         if var == "dih":
             detected = np.arange(3,self.natoms)[np.logical_and(np.minimum(self.dih_std[3:], self.dih_c_std[3:]) > thresh_min,np.minimum(self.dih_std[3:], self.dih_c_std[3:]) < thresh_max)]
             group_list, done = [], []
@@ -1193,9 +1256,12 @@ class ic_averager:
                     gr = group(b2s_arr, id(self), var="dih")
                     setattr(gr,"cart", b2s_cart)  # not "gr.cart = because @property
                     group_list.append(gr)
-        else:
+        elif var in ["bond", "angle"]:
             shift = 2 if var == "angle" else 1
-            group_list = np.arange(shift,self.natoms)[np.logical_and(getattr(self,var+"s").std(axis=1) > thresh_min, getattr(self,var).std(axis=1) < thresh_max)]  # "bond"=> "bonds", "angle"=> "angles"
+            group_list = np.arange(shift,self.natoms)[np.logical_and(getattr(self,var+"s").std(axis=1) > thresh_min, getattr(self,var+"s").std(axis=1) < thresh_max)]  # "bond"=> "bonds", "angle"=> "angles"
+        else: # pseudo
+            group_list = np.arange(shift,self.natoms)[np.logical_and(getattr(self,var).std(axis=1) > thresh_min, getattr(self,var).std(axis=1) < thresh_max)]
+            
         setattr(self, group_name, group_list)
         print("Obtained {} with thresholds: [{},{}]".format(group_name, thresh_min, thresh_max))
         print("Resulting in groups:\n {}".format("    ".join(group_list)))
@@ -1228,19 +1294,17 @@ class ic_averager:
         if var == "":
             print("no variable type specified, supposing it is \"dihedral\"")
             var = "dih"
-        var = vdict[var]
+        var = vdict[var] if var in vdict.keys() else var
         if var == "dih":
             if hasattr(self, "use_c"):
                 (arr, using_c) = (self.dih_c[index],True) if index in self.use_c else (self.dih[index], False)
             else:
                 print("Watch out! No correction of quasilinear dihedrals has been performed thus far!")
                 arr = self.dih[index]
-        elif var == "angle":
-            arr = self.angles[index]
-        elif var == "bond":
-            arr = self.bonds[index]
+        elif var in ["angle", "bond"]:
+            arr = getattr(self, var+"s")
         else: 
-            raise ValueError("Use either \"dihedral\" or \"angle\" or \"bond\".")
+            arr = getattr(self, var)
         arr = arr.reshape(-1,1)
         initial_centers = kmeans_plusplus_initializer(arr, min_centers).initialize()
         xmeans_instance = xmeans(arr, initial_centers, max_centers)
@@ -1269,8 +1333,8 @@ class ic_averager:
             Otherwise, values outside the range are ignored
         """
         from scipy.sparse import csr_matrix
-        var = vdict[var]
-        values = getattr(self, var)[:,index] if var == "dih" else getattr(self, var+"s")[:,index]
+        var = vdict[var] if var in vdict.keys() else var
+        values = getattr(self, var+"s")[index,:] if var in ["bonds", "angles"] else getattr(self, var)[index,:]
         frames = np.arange(self.nframes)
         if not range_:
             range_ = (values.min(), values.max())
