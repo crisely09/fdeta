@@ -29,7 +29,7 @@ nthtolast = lambda x,y: x.index(sorted(x)[-y]) # index of n-th to last
 maxidx = lambda x: x.index(max(x))  # index of max elem, i.e. nthtolast(x,1)
 minidx = lambda x: x.index(min(x))  # index of min elem, i.e. nthtolast(x,-1)
 
-def mindidx(l):
+def mindidx(l: list):
     """
     Note
     ----
@@ -60,7 +60,7 @@ def mindidx(l):
             break
     return didx
     
-def slicestr(slc):
+def slicestr(slc: slice):
     """
     Note
     ----
@@ -81,9 +81,9 @@ def slicestr(slc):
     step = slc.step if slc.step else ""
     return "{}:{}:{}".format(start, stop, step)
 
-def plot_2Ddistrib(data: np.ndarray, index: list, bins: int = 36,
-                 labels: list= [],  
-              title: str = "", pos_range: bool = True):
+def plot_2Ddistrib(data: np.ndarray, index: list, var: Union[list, str, tuple] = "dihedral",
+                   bins: int = 36, labels: list= [],  title: str = "",
+                 pos_range: Union[list,bool] = True, label: Union[list,str] = []):
     """Plots value occurrence vs value
     Parameters
     ----------
@@ -93,12 +93,13 @@ def plot_2Ddistrib(data: np.ndarray, index: list, bins: int = 36,
         index or list of indexes to plot (data[index,:])
     bins: int
         number of bins for histogram. default is 36
-    y_label: str 
-        label for y axis. default is "dihedral"
+    var: list/tuple/str 
+        variable type(s) (dih/angle/bond). used for ranges and for axis labels. default is "dihedral"
     title: str
         title for the plot. default is empty string
-    pos_range: bool
-        whether to plot in the (-180,180) or in the (0,360) range
+    pos_range: list[bool]/bool
+        whether to plot in the (-180,180) or in the (0,360) range on each axis.
+        If boolean, turns to list of twice that value
     
     Returns
     -------
@@ -107,20 +108,31 @@ def plot_2Ddistrib(data: np.ndarray, index: list, bins: int = 36,
     """
     fig = plt.figure(figsize=(20, 10), dpi=150)
     ax = fig.add_subplot(111)
-    range_ = (0, 360) if pos_range else (-180, 180)
-    ax.hist2d(data[index[0], :], data[index[1], :], bins=[bins,bins], range=(range_,range_))
-    if not labels:
-        ax.set_xlabel("{}".format(index[0]))
-        ax.set_ylabel("{}".format(index[1]))
+    if type(var) == str:
+        var = [var, var]
+    var = [vdict[v] for v in var]
+    if type(pos_range) == bool:
+        pos_range = [pos_range, pos_range]
+    range_ = [None, None]  # check if works for bonds
+    for n,v in enumerate(var):
+        if v == "dih":
+         range_[n] = (0, 360) if pos_range[n] else (-180, 180)
+        elif var == "angle":
+            var[n] = (0,180)
+    ax.hist2d(data[index[0], :], data[index[1], :], bins=[bins,bins], range=range_)
+    if not label:
+        ax.set_xlabel("{} {}".format(var[0],index[0]))
+        ax.set_ylabel("{} {}".format(var[1],index[1]))
     else:
-        ax.set_xlabel("{}".format(labels[0]))
-        ax.set_ylabel("{}".format(labels[1]))
+        ax.set_xlabel("{}".format(label[0]))
+        ax.set_ylabel("{}".format(label[1]))
     ax.set_title(title)
     return fig
 
 def plot_distrib(data: np.ndarray, index: Union[list,int], bins: int = 36,
-                 x_label: str = "dihedral",  
-              title: str = "", pos_range: bool = True):
+                 var: str = "dihedral", title: str = "",
+                 pos_range: bool = True, label: Union[list,str] = [],
+                 alpha: float = 0.0):
     """Plots value occurrence vs value
     Parameters
     ----------
@@ -130,46 +142,64 @@ def plot_distrib(data: np.ndarray, index: Union[list,int], bins: int = 36,
         index or list of indexes to plot (data[index,:])
     bins: int
         number of bins for histogram. default is 36
-    y_label: str 
-        label for y axis. default is "dihedral"
+    var: str 
+        variable type (dih/angle/bond). also used as label for y axis. default is "dihedral"
     title: str
         title for the plot. default is empty string
     pos_range: bool
-        whether to plot in the (-180,180) or in the (0,360) range
-    
+        whether to plot in the (-180,180) or in the (0,360) range.
+        Only applies for var=="dih". 
+    label: list/str
+        label(s) for the series to plot. length must match that of index
+    alpha: float
+        transparency. default uses 1.0 for 1 distribution, 0.75 for 2, 0.5 for more
+        
     Returns
     -------
     plt.figure
         the histogram with distribution of data[i,:] for i in index
     """
     fig = plt.figure(figsize=(20, 10), dpi=150)
+    var = vdict[var]
     ax = fig.add_subplot(111)
-    range_ = (0, 360) if pos_range else (-180, 180)
     if type(index) == int:
         index = [index]
-    for i in index:
-        ax.hist(data[i, :], bins=bins, range=range_)
+    if not label:
+        label = [str(i) for i in index]
+    elif type(label) == str:
+        label = [label]
+    if var == "dih":
+        range_ = (0, 360) if pos_range else (-180, 180)
+    elif var == "angle":
+        range_ = (0,180)
+    if not alpha:
+        alpha = 1.0 if len(index) == 1 else 0.75 if len(index) == 2 else 0.5
+    for n,i in enumerate(index):
+        ax.hist(data[i, :], bins=bins, range=range_, label=label[n])
     ax.set_ylabel("occurrence") 
-    ax.set_xlabel(x_label)
+    ax.set_xlabel(var)
     ax.set_title(title)
     return fig
 
 
-def plot_time_evo(data: np.ndarray, index: Union[list,int], y_label: str = "dihedral",  
-                  title: str = "", pos_range: bool = True):
-    """Plots value vs time
+def plot_time_evo(data: np.ndarray, index: Union[list,int], var: str = "dihedral",  
+                  title: str = "", pos_range: bool = True, label: Union[list,str] = []):
+    """Plots value vs time for one or more variables
     Parameters
     ----------
     data: np.array
         the array to slice and plot from. Generally np.array(natoms, nframes)
     index: list or int
         index or list of indexes to plot (data[index,:])
-    y_label: str 
-        label for y axis. default is "dihedral"
+    var: str 
+        variable type (dih/angle/bond). also used as label for y axis. default is "dihedral"
     title: str
         title for the plot. default is empty string
     pos_range: bool
-        whether to plot in the (-180,180) or in the (0,360) range
+        whether to plot in the (-180,180) or in the (0,360) range.
+        Only applies for var=="dih". 
+    label: list/str
+        label(s) for the series to plot. length must match that of index
     
     Returns
     -------
@@ -177,19 +207,28 @@ def plot_time_evo(data: np.ndarray, index: Union[list,int], y_label: str = "dihe
         the value vs t of data[i,:] for i in index
     """
     x = np.arange(data.shape[1])
+    var = vdict[var]
     fig = plt.figure(figsize=(20, 10), dpi=150)
     ax = fig.add_subplot(111)
     if type(index) == int:
         index = [index]
-    for i in index:
-        ax.scatter(x, data[i, :])
-    ax.set_ylabel(y_label)  
+    if not label:
+        label = [str(i) for i in index]
+    elif type(label) == str:
+        label = [label]
+    for n,i in enumerate(index):
+        ax.scatter(x, data[i, :], label=label[n])
+    ax.set_ylabel(var)  
     ax.set_xlabel("frame")
+    ax.legend()
     ax.set_title(title)
-    if not pos_range:
-        ax.set_ylim(-180, 180)
-    else:
-        ax.set_ylim(0, 360)
+    if var == "dih":
+        if not pos_range:
+            ax.set_ylim(-180, 180)
+        else:
+            ax.set_ylim(0, 360)
+    elif var == "angle":
+        ax.set_ylim(0, 180)
     return fig
 
 class group:
@@ -197,7 +236,7 @@ class group:
     Object for a set of variables, most commonly dihedrals, corresponding to the same chemical group.
     For instance 3 H in a methyl, or 2 H in an amino group, or 1 H in a hydroxy
     """
-    def __init__(self, arr, avg_id, var="dih"):
+    def __init__(self, arr: Union[np.array, list, tuple], avg_id: int, var: str = "dih"):
         """
         arr: np.array, list, tuple
             indexes of the angles in ic-numbering
@@ -236,7 +275,7 @@ class group:
             return "IC: {}".format(self.arr.tolist())
         
     @staticmethod
-    def from_cart(cart, avg_id):
+    def from_cart(cart: np.array, avg_id: int):
         """
         Note
         ----
@@ -270,7 +309,7 @@ class group:
             setattr(self, "_cart", np.array(c_table.index[self.arr]))
         return getattr(self, "_cart")
     
-    def get_basins(self, min_centers=2, max_centers=3, overwrite=False):
+    def get_basins(self, min_centers: int = 2, max_centers: int = 3, overwrite: bool = False):
         """
         Note
         ----
@@ -337,7 +376,7 @@ class group:
                 return None
         
     @selected.setter
-    def selected(self, idx):
+    def selected(self, idx: int):
         """
         Note
         ----
@@ -402,7 +441,7 @@ class group:
         else:
             self._selected = self.prominence.index(min(self.prominence))
             
-    def select_prominence(self,minormax):
+    def select_prominence(self, minormax: Union[str, callable]):  # Warning: possible issue with "callable"
         """
         Note
         ----
@@ -459,8 +498,98 @@ class group:
         Selects atom with the lowest residuals
         """
         self.selected = mindidx(self.res)[0]
+    
+    def time_evo_sep(self, title: str = ""):
+        """
+        Note
+        ----
+        Plots time evolution of each variable in group, each in a separate picture
+        
+        Parameters
+        ----------
+        title: str
+            title for the plot. default is empty string
             
-    def get_avg_values(self, basin=1):  # TODO: overwrite issues
+        Returns
+        -------
+        plt.figures
+            the value vs t of data[i,:] for i in index
+        """
+        avg = cast(self.avg_id, py_object).value
+        to_return = []
+        for n,a in enumerate(self.arr):
+            to_return.append(avg.plot_time_evo(a, var=self.var, title=title, label=self.cart[n]))
+        return to_return
+    
+    def time_evo(self, title: str = ""):
+        """
+        Note
+        ----
+        Plots time evolution of each variable in group, all in the same picture
+        
+        Parameters
+        ----------
+        title: str
+            title for the plot. default is empty string
+        
+        Returns
+        -------
+        plt.figure
+            the value vs t of data[i,:] for i in index
+        """
+        avg = cast(self.avg_id, py_object).value
+        return avg.plot_time_evo(self.arr.tolist, var=self.var, title=title, label=self.cart)
+    
+    def distrib_sep(self, bins: int = 36, title: str = "", alpha: float = 0.0):
+        """
+        Note
+        ----
+        Plots time evolution of each variable in group, each in a separate picture
+        
+        Parameters
+        ----------
+        bins: int
+            the number of bins
+        title: str
+            title for the plot. default is empty string
+        alpha: float
+            transparency. default uses 1.0 for 1 distribution, 0.75 for 2, 0.5 for more
+        
+        Returns
+        -------
+        plt.figures
+            the value vs t of data[i,:] for i in index
+        """
+        avg = cast(self.avg_id, py_object).value
+        to_return = []
+        for n,a in enumerate(self.arr):
+            to_return.append(avg.plot_distrib(a, bins=bins, var=self.var, title=title, label=self.cart[n], alpha=alpha))
+        return to_return
+    
+    def distrib(self, bins: int = 36, title: str = "", alpha: float = 0.0):
+        """
+        Note
+        ----
+        Plots time evolution of each variable in group, all in the same picture
+        
+        Parameters
+        ----------
+        bins: int
+            the number of bins
+        title: str
+            title for the plot. default is empty string
+        alpha: float
+            transparency. default uses 1.0 for 1 distribution, 0.75 for 2, 0.5 for more
+        
+        Returns
+        -------
+        plt.figure
+            the value vs t of data[i,:] for i in index
+        """
+        avg = cast(self.avg_id, py_object).value
+        return avg.plot_distrib(self.arr, bins=bins, var=self.var, title=title, label=self.cart)
+            
+    def get_avg_values(self, basin: int = 1):  # TODO: overwrite issues
         """
         Note
         ----
@@ -495,7 +624,7 @@ class group:
             self._avg_values = vals
         return self._avg_values
 
-def intersect_lists(ll):  # tested to be faster than other possible methods
+def intersect_lists(ll: list):  # tested to be faster than other possible methods
     """
     Note
     ----
@@ -516,7 +645,7 @@ def intersect_lists(ll):  # tested to be faster than other possible methods
         intersec = intersec & set(l)
     return list(intersec)
 
-def intersect_groups(grouplist, basin=1):
+def intersect_groups(grouplist: list, basin: int = 1):
     """
     Note
     ----
@@ -543,7 +672,7 @@ def intersect_groups(grouplist, basin=1):
     ll = [get_frames(gr) for gr in grouplist]
     return intersect_lists(ll)
 
-def agreement_lists(ll):
+def agreement_lists(ll: list):
     """
     Parameters
     ----------
@@ -556,7 +685,7 @@ def agreement_lists(ll):
     """
     return len(intersect_lists(ll))/max([len(l) for l in ll])
 
-def agreement_groups(grouplist, basin=1):
+def agreement_groups(grouplist: list, basin: int = 1):
     """
     Parameters
     ----------
@@ -656,7 +785,43 @@ class ic_averager:
         """
         import copy as c
         return c.copy(self)
+    
+    def cart_to_ic(self, arr: Union[int, list, tuple, np.array]):
+        """
+        Note
+        ----
+        Returns the array but in ic-numbering
         
+        Parameters
+        ----------
+        arr: int/np.array/list/tuple
+            the index(es) to convert
+        
+        Returns
+        -------
+        np.array
+            the array in ic-numbering
+        """
+        return np.array([self.c_table.index.get_loc(i) for i in arr])
+    
+    def ic_to_cart(self, arr: Union[int, list, tuple, np.array]):
+        """
+        Note
+        ----
+        Returns the array but in cartesian-numbering
+        
+        Parameters
+        ----------
+        arr: int/np.array/list/tuple
+            the index(es) to convert
+        
+        Returns
+        -------
+        np.array
+            the array in cartesian-numbering
+        """
+        return np.array(self.c_table.index[arr])
+    
     @classmethod
     def from_arrays(cls, source, atoms: Union[np.ndarray,list], arr: np.ndarray, int_coord_file: str = "internal_coordinates.npz",
                                save: bool =True, avg_bond_angles: bool = False, dec_digits: int = 3):
@@ -866,6 +1031,113 @@ class ic_averager:
         zmat1 = str2zmat(frame_str, c_table)
         return cls(int_coord_file, bonds, angles, dih, zmat1, c_table)
     
+    def plot_time_evo(self, index: Union[list,int], var: str = "dihedral",
+                      title: str = "", pos_range: bool = True,
+                      label: Union[list, str] = []):
+        """
+        Note
+        ----
+        Plots the time evolution of one or more variable
+        
+        Parameters
+        ----------
+        index: list or int
+            index or list of indexes to plot (data[index,:])
+        var: str 
+            variable type (dih/angle/bond). also used as label for y axis. default is "dihedral"
+        title: str
+            title for the plot. default is empty string
+        pos_range: bool
+            whether to plot in the (-180,180) or in the (0,360) range.
+            Only applies for var=="dih". 
+        label: list/str
+            label(s) for the series to plot. length must match that of index
+    
+        Returns
+        -------
+        plt.figure
+            the value vs t of data[i,:] for i in index
+        """
+        data = getattr(self,vdict[var])
+        if vdict[var] == "dih":
+            pos_range = self.use_c
+        if not label:
+            label = list(self.c_table.index[index])
+        return plot_time_evo(data, index, var=var, title=title, pos_range=pos_range, label=label)
+    
+    def plot_distrib(self, index: Union[list,int], bins: int = 36,
+                 var: str = "dihedral", title: str = "",
+                 pos_range: bool = True, label: Union[list,str] = [], alpha: float = 0.0):
+        """
+        Note
+        ----
+        Plots the distribution of one or more variable
+        
+        Parameters
+        ----------
+        index: list or int
+            index or list of indexes to plot (data[index,:])
+        bins: int
+            number of bins for histogram. default is 36
+        var: str 
+            variable type (dih/angle/bond). also used as label for y axis. default is "dihedral"
+        title: str
+            title for the plot. default is empty string
+        pos_range: bool
+            whether to plot in the (-180,180) or in the (0,360) range.
+            Only applies for var=="dih". 
+        label: list/str
+            label(s) for the series to plot. length must match that of index
+        alpha: float
+            transparency. default uses 1.0 for 1 distribution, 0.75 for 2, 0.5 for more
+            
+        Returns
+        -------
+        plt.figure
+            the histogram with distribution of data[i,:] for i in index
+        """
+        data = getattr(self,vdict[var])
+        if vdict[var] == "dih":
+            pos_range = self.use_c
+        if not label:
+            label = list(self.c_table.index[index])
+        return plot_distrib(data, index, bins=bins, var=var, title=title,pos_range=pos_range, label=label, alpha=alpha)
+        
+    def plot_2Ddistrib(self, index: list, var: Union[list, tuple, str] = "dihedral", bins: int = 36,
+                 labels: list= [],  title: str = "",
+                 pos_range: Union[list,bool] = False, label: Union[list,str] = []):
+        """Plots value occurrence vs value
+        Parameters
+        ----------
+        index: list/int
+            index or list of indexes to plot (data[index,:])
+        var: list/tuple/str
+            variable type(s). used for range and axis labels
+        bins: int
+            number of bins for histogram. default is 36
+        y_label: str 
+            label for y axis. default is "dihedral"
+        title: str
+            title for the plot. default is empty string
+        pos_range: list[bool]/bool
+            whether to plot in the (-180,180) or in the (0,360) range on each axis.
+            If boolean, turns to list of twice that value
+        
+        Returns
+        -------
+        plt.figure
+            the histogram with distribution of data[i,:] for i in index
+        """
+        var = [vdict[v] for v in var]
+        data = getattr(self,vdict[var])
+        if not pos_range:
+            for n,v in enumerate(var):
+                if v == "dih":
+                    pos_range[n] = self.use_c[index[n]]
+        if not label:
+            label = list(self.c_table.index[index])
+        return plot_2Ddistrib(data, index, bins=bins, title=title, pos_range=pos_range, label=label)
+
     def correct_quasilinears(self, method: str = "std"):
         """ Fixes wrong averaging for dihedrals around + or - 180.
     
@@ -909,7 +1181,8 @@ class ic_averager:
         self.[group_name]: list[groups]
             list of detected groups
         """
-        if vdict[var] == "dih":
+        var = vdict[var]
+        if var == "dih":
             detected = np.arange(3,self.natoms)[np.logical_and(np.minimum(self.dih_std[3:], self.dih_c_std[3:]) > thresh_min,np.minimum(self.dih_std[3:], self.dih_c_std[3:]) < thresh_max)]
             group_list, done = [], []
             for i  in detected:
@@ -921,7 +1194,8 @@ class ic_averager:
                     setattr(gr,"cart", b2s_cart)  # not "gr.cart = because @property
                     group_list.append(gr)
         else:
-            group_list = np.arange(3,self.natoms)[np.logical_and(getattr(self,var+"s").std(axis=1) > thresh_min, getattr(self,var).std(axis=1) < thresh_max)]  # "bond"=> "bonds", "angle"=> "angles"
+            shift = 2 if var == "angle" else 1
+            group_list = np.arange(shift,self.natoms)[np.logical_and(getattr(self,var+"s").std(axis=1) > thresh_min, getattr(self,var).std(axis=1) < thresh_max)]  # "bond"=> "bonds", "angle"=> "angles"
         setattr(self, group_name, group_list)
         print("Obtained {} with thresholds: [{},{}]".format(group_name, thresh_min, thresh_max))
         print("Resulting in groups:\n {}".format("    ".join(group_list)))
@@ -974,8 +1248,42 @@ class ic_averager:
         basins = list(map(np.asarray, xmeans_instance.get_clusters()))
         centers = [conv_d(i) for i in list(it.chain.from_iterable(xmeans_instance.get_centers()))] if using_c else list(it.chain.from_iterable(xmeans_instance.get_centers()))
         return basins, centers
+    
+    def get_bins(self, var: str, index: int, bins: int = 5, range_: tuple = ()):
+        """
+        Note
+        ----
+        creates bins (as many as asked) of equal value-range within range(if not provided is range of your values).
+        Then the indexes of the frames in each basin.
+        
+        Parameters
+        ----------
+        var: str
+            type of variable (dih/angle/bond)
+        index: int
+            index (ic-numbering) of the variable to base bins on
+        bins: int
+            number of bins desired
+        range_: tuple
+            (min,max). Default looks at min/max of your values.
+            Otherwise, values outside the range are ignored
+        """
+        from scipy.sparse import csr_matrix
+        var = vdict[var]
+        values = getattr(self, var)[:,index] if var == "dih" else getattr(self, var+"s")[:,index]
+        frames = np.arange(self.nframes)
+        if not range_:
+            range_ = (values.min(), values.max())
+        else:
+            in_range = np.logical_and(values >= range_[0], values <= range_[1])
+            frames = frames[in_range]  # frame numbers
+            values = values[in_range]
+        digitized = (float(bins)/(range_[0] - range_[1])*(values - range_[0])).astype(int)  # array of what bin each frame is in
+        digitized[digitized == bins] = bins -1  # so that last bin includes max
+        shape = (bins+1, frames)  # shape can be inferred but it is probably faster to give it
+        S = csr_matrix((values, [digitized, frames]), shape=shape)
+        return np.split(S.indices, S.indptr[1:-1])[:-1]  # last bin empty (only max values but we moved them to second to last bin)
 
-                        
     def average(self, out_file: str = "averaged.xyz", overwrite: bool = False,
                            view: bool = True, viewer: str = "avogadro",
                            correct_quasilinears: str = "std",
