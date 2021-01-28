@@ -1,6 +1,7 @@
 """Script to make one single file trajectory, one fragment from xyz."""
 
 from typing import Union
+import copy as c
 import os
 import numpy as np
 import subprocess as sp
@@ -22,9 +23,12 @@ else:
 
 
 rc('text', usetex=True)
-vdict = {"dihedral": "dih", "d": "dih", "dih": "dih",
+vds = {"dihedral": "dih", "d": "dih", "dih": "dih",
          "angle": "angle", "angles": "angle", "a": "angle", 
          "b": "bond", "bond": "bond", "bonds": "bond"}
+vdp = {"dihedral": "dih", "d": "dih", "dih": "dih",
+         "angle": "angles", "angles": "angles", "a": "angles", 
+         "b": "bonds", "bond": "bonds", "bonds": "bonds"}
 
 # max-min funcs
 nthtolast = lambda x,y: x.index(sorted(x)[-y]) # index of n-th to last 
@@ -61,8 +65,86 @@ def mindidx(l: list):
             didx[1] = idx - tot
             break
     return didx
-    
-def slicestr(slc: slice):
+
+def str2cart(xyz_str: str, start_index: int = 1):
+    """Gets cc.cartesian from string
+
+    Note1
+    ----
+    StringIO must be imported differently according to the sys version.
+    use :
+    import sys
+    if sys.version_info[0] < 3:
+        from StringIO import StringIO
+    else :
+        from io import StringIO
+
+    Note2
+    -----
+    StringIO can be used only once!
+
+    Parameters
+    ----------
+    xyz_str : str
+        xyz as a string.
+    start_index : int
+        starting point of the index for the DataFrame
+    Returns
+    -------
+    chemcoordc.Cartesian
+        chemcoord cartesian object (with bonds detected)
+    """
+    tofeed = StringIO(xyz_str)
+    mol = cc.Cartesian.read_xyz(tofeed, start_index=start_index)
+    return mol
+
+
+def str2zmat(xyz_str, c_table, start_index=1):
+    """Gets cc.zmat from string
+
+    Note1
+    ----
+    StringIO must be imported differently according to the sys version.
+    use :
+    import sys
+    if sys.version_info[0] < 3 :
+        from StringIO import StringIO
+    else :
+        from io import StringIO
+
+    Note2
+    -----
+    StringIO can be used only once!
+
+    Parameters
+    ----------
+    xyz_str : str
+        xyz as a string.
+    start_index : int
+        starting point of the index for the DataFrame
+    Returns
+    -------
+    chemcoordc.Cartesian
+        chemcoord cartesian object (with bonds detected)
+    """
+    tofeed = StringIO(xyz_str)
+    mol = cc.Cartesian.read_xyz(tofeed, start_index=start_index)
+    zmat = mol.get_zmat(c_table)
+    return zmat
+
+def conv_d(d: int):
+    """Convert angles from (0, 360) range
+       to (-180, 180) range.
+
+    Parameters
+    ----------
+    d : int
+        Degrees in (-180, 180) range.
+    """
+    r = d % 360
+    return r - (r // 180) * 360 
+
+def slicestr(slc: Union[slice, list, tuple]):
     """
     Note
     ----
@@ -78,14 +160,17 @@ def slicestr(slc: slice):
     str
         "{start}:{stop}:{step}"
     """
-    start = slc.start if slc.start else ""
-    stop = slc.stop if slc.stop else ""
-    step = slc.step if slc.step else ""
-    return "{}:{}:{}".format(start, stop, step)
+    if type(slc) == slice:
+        start = slc.start if slc.start else ""
+        stop = slc.stop if slc.stop else ""
+        step = slc.step if slc.step else ""
+        return "{}:{}:{}".format(start, stop, step)
+    elif type(slc) in [list, tuple, np.array]:
+        return str(list(slc))
 
-def plot_2Ddistrib(data: np.ndarray, index: list, var: Union[list, str, tuple] = "dihedral",
+def plot_2Ddistrib(data: Union[np.ndarray, list], index: list, var: Union[list, str, tuple] = "dihedral",
                    bins: int = 36, labels: list= [],  title: str = "",
-                 pos_range: Union[list,bool] = True, label: Union[list,str] = []):
+                 pos_range: Union[list,bool, type(None)] = None, label: list = []):
     """Plots value occurrence vs value
     Parameters
     ----------
@@ -99,7 +184,7 @@ def plot_2Ddistrib(data: np.ndarray, index: list, var: Union[list, str, tuple] =
         variable type(s) (dih/angle/bond). used for ranges and for axis labels. default is "dihedral"
     title: str
         title for the plot. default is empty string
-    pos_range: list[bool]/bool
+    pos_range: list[bool]/bool/None
         whether to plot in the (-180,180) or in the (0,360) range on each axis.
         If boolean, turns to list of twice that value
     
@@ -110,18 +195,28 @@ def plot_2Ddistrib(data: np.ndarray, index: list, var: Union[list, str, tuple] =
     """
     fig = plt.figure(figsize=(20, 10), dpi=150)
     ax = fig.add_subplot(111)
+    print("var", var)
     if type(var) == str:
         var = [var, var]
-    var = [vdict[v] for v in var]
-    if type(pos_range) == bool:
+    var = [vds[v] if v in vds.keys() else v for v in var]  
+    if type(pos_range) in [bool, type(None)]:
         pos_range = [pos_range, pos_range]
-    range_ = [None, None]  # check if works for bonds
+    range_ = [None, None]  
     for n,v in enumerate(var):
+        print("n: {}, v: {}".format(n,v))
         if v == "dih":
-         range_[n] = (0, 360) if pos_range[n] else (-180, 180)
-        elif var == "angle":
-            var[n] = (0,180)
-    ax.hist2d(data[index[0], :], data[index[1], :], bins=[bins,bins], range=range_)
+            range_[n] = (0, 360) if pos_range[n] else (-180, 180)
+            print("range{}: {}".format(n,range_[n]))
+        elif v == "angle":
+            range_[n] = (0,180)
+            print("range{}: {}".format(n,range_[n]))
+    print("range", range_)
+    if type(data) == list:
+        x, y = data[0][index[0], :], data[1][index[1], :]  # two diff var (e.g. bond, angle)
+    else:
+        x, y = data[index[0], :], data[index[1], :]
+    print("first vals", x[:5], y[:5])
+    ax.hist2d(x, y, bins=[bins,bins], range=range_)
     if not label:
         ax.set_xlabel("{} {}".format(var[0],index[0]))
         ax.set_ylabel("{} {}".format(var[1],index[1]))
@@ -133,8 +228,8 @@ def plot_2Ddistrib(data: np.ndarray, index: list, var: Union[list, str, tuple] =
 
 def plot_distrib(data: np.ndarray, index: Union[list,int], bins: int = 36,
                  var: str = "dihedral", title: str = "",
-                 pos_range: bool = True, label: Union[list,str] = [],
-                 alpha: float = 0.0):
+                 pos_range: bool = True, label: Union[list, str, int] = [],
+                 alpha: float = 0.0):  
     """Plots value occurrence vs value
     Parameters
     ----------
@@ -162,30 +257,36 @@ def plot_distrib(data: np.ndarray, index: Union[list,int], bins: int = 36,
         the histogram with distribution of data[i,:] for i in index
     """
     fig = plt.figure(figsize=(20, 10), dpi=150)
-    var = vdict[var] if var in vdict.keys() else var
+    var = vds[var] if var in vds.keys() else var
     ax = fig.add_subplot(111)
-    if type(index) == int:
+    if type(index) in [int, np.int32, np.int64]:
         index = [index]
     if not label:
         label = [str(i) for i in index]
-    elif type(label) == str:
-        label = [label]
+    elif type(label) in [str,int, np.int32, np.int64]:
+        label = [str(label)]
+    range_ = False
     if var == "dih":
         range_ = (0, 360) if pos_range else (-180, 180)
     elif var == "angle":
         range_ = (0,180)
     if not alpha:
         alpha = 1.0 if len(index) == 1 else 0.75 if len(index) == 2 else 0.5
-    for n,i in enumerate(index):
-        ax.hist(data[i, :], bins=bins, range=range_, label=label[n])
+    if range_:
+        for n,i in enumerate(index):
+            ax.hist(data[i, :], bins=bins, range=range_, label=label[n], alpha=alpha)
+    else:
+        for n,i in enumerate(index):
+            ax.hist(data[i, :], bins=bins, label=label[n], aplha=alpha)
     ax.set_ylabel("occurrence") 
+    ax.legend()
     ax.set_xlabel(var)
     ax.set_title(title)
     return fig
 
 
 def plot_time_evo(data: np.ndarray, index: Union[list,int], var: str = "dihedral",  
-                  title: str = "", pos_range: bool = True, label: Union[list,str] = []):
+                  title: str = "", pos_range: bool = True, label: Union[list, str, int] = []):
     """Plots value vs time for one or more variables
     Parameters
     ----------
@@ -209,14 +310,14 @@ def plot_time_evo(data: np.ndarray, index: Union[list,int], var: str = "dihedral
         the value vs t of data[i,:] for i in index
     """
     x = np.arange(data.shape[1])
-    var = vdict[var] if var in vdict.keys() else var
+    var = vds[var] if var in vds.keys() else var
     fig = plt.figure(figsize=(20, 10), dpi=150)
     ax = fig.add_subplot(111)
-    if type(index) == int:
+    if type(index) in [int, np.int32, np.int64]:
         index = [index]
     if not label:
         label = [str(i) for i in index]
-    elif type(label) == str:
+    elif type(label) in [str,int, np.int32, np.int64]:
         label = [label]
     for n,i in enumerate(index):
         ax.scatter(x, data[i, :], label=label[n])
@@ -246,13 +347,15 @@ class group:
             id of the averager the group refers to
         var: str
             type of variable. default is "dih"
-            uses vdict for dihedral/dih, angles/angle, etc...
+            uses vds for dihedral/dih, angles/angle, etc...
         """
+        if type(arr) in [int, np.int32, np.int64]:
+            arr = np.array([arr])
         if type(arr) in [list,tuple]:
             arr = np.array(arr)
         self.arr = arr
         self.avg_id = avg_id  # id(ic_avg), works as pointer to the averager
-        self.var = vdict[var] if var in vdict.keys() else var
+        self.var = vds[var] if var in vds.keys() else var
         
     def __repr__(self):
         """
@@ -260,7 +363,7 @@ class group:
         ----
         When calling group, it returns a string with ic-numbering and, if available, cartesian counting
         """
-        if hasattr(self, "cart"):
+        if hasattr(self, "_cart"):
             return "IC: {}, Cart: {}".format(self.arr.tolist(), self.cart.tolist())
         else:
             return "IC: {}".format(self.arr.tolist())
@@ -271,7 +374,7 @@ class group:
         ----
         When converting group to a string (e.g. printing), it returns a string with ic-numbering and, if available, cartesian counting
         """
-        if hasattr(self, "cart"):
+        if hasattr(self, "_cart"):
             return "IC: {}, Cart: {}".format(self.arr.tolist(), self.cart.tolist())
         else:
             return "IC: {}".format(self.arr.tolist())
@@ -389,7 +492,7 @@ class group:
         idx: int
             the 
         """
-        if hasattr(self, "_selected") and self._selected != idx:
+        if hasattr(self, "_selected") and self._selected != idx and hasattr(self,"_avg_values"):
             del self._avg_values
         self._selected = idx
         
@@ -420,6 +523,21 @@ class group:
         if not hasattr(self,"_prominence"):
             self._prominence = [sorted(i)[-1] - sorted(i)[-2] for i in self.weights]
         return self._prominence
+    
+    def select(self, criterion: Union[str, callable]):
+        """
+        Parameters
+        ----------
+        criterion: str/callable
+            how to select. "res" calls self.select_res()
+            otherwise same as select_prominence
+        """
+        if criterion == "res":
+            self.select_res()
+        elif criterion in ["min", "minimum", "least", "less", min]:
+            self.select_least_prominent()
+        elif criterion in ["max", "maximum", "most", "more", max]:
+            self.select_most_prominent()
             
     def select_most_prominent(self):
         """
@@ -443,7 +561,7 @@ class group:
         else:
             self._selected = self.prominence.index(min(self.prominence))
             
-    def select_prominence(self, minormax: Union[str, callable]):  # Warning: possible issue with "callable"
+    def select_prominence(self, minormax: Union[str, callable]):
         """
         Note
         ----
@@ -455,13 +573,13 @@ class group:
             min/max, "min"/"max", "minimum"/"maximum", "lest"/"most", "less"/"more"
         """
         if minormax in ["min", "minimum", "least", "less", min]:
-            self.select_least_prominent
+            self.select_least_prominent()
         elif minormax in ["max", "maximum", "most", "more", max]:
-            self.select_most_prominent
+            self.select_most_prominent()
         else:
             raise ValueError("Use min/minimum/least/less or max/maximum/most/more")
             
-    def res_analysis(self):
+    def res_analysis(self):  
         """
         Note
         Analysis of "residuals". 
@@ -469,18 +587,18 @@ class group:
         angle differences for the basins centers and average angle differences over the trajectory
         """
         if len(self.centers) == 1:
-            res = [0 for c in self.centers[0]]
+            res = [[0 for c in self.centers[0]]]
         else:
             avg = cast(self.avg_id, py_object).value
             res = [[0 for i in j] for j in self.centers]
-            for na,angle in enumerate(self.centers):
-                others = [(m,i) for m,i in enumerate(self.arr) if m != na]  # (numbering in group, numbering in ic)
-                mdiffs = [(conv_d(avg.dih[self.arr[na],:] - avg.dih[self.arr[i[1]],:])).mean() for i in others]
-                for nc,c in enumerate(self.centers[na]):
-                    for o in others:
-                        expected = conv_d(c - mdiffs[o[0]])   # expected value based on avg diff
-                        res[na][nc] += min([i  - expected for  i in self.centers[o[0]]])
-            self._res = res
+            for na,angle in enumerate(self.centers):  # over angles in group
+                others = [(m,i) for m,i in enumerate(self.arr) if m != na]  # (numbering in group, numbering in ic) for other_angle != angle
+                mdiffs = [(conv_d(avg.dih[self.arr[na],:] - avg.dih[[i[1]],:])).mean() for i in others]  # mean differences other-angle over the trajectory
+                for nc,c in enumerate(self.centers[na]):  # centers for that angle
+                    for no,o in enumerate(others):
+                        expected = conv_d(c - mdiffs[no])   # expected value based on avg diff
+                        res[na][nc] += min([abs(expected - i) for other in others for i in self.centers[other[0]]])  # abs diff between expected and center
+        self._res = res
             
     @property
     def res(self):
@@ -489,7 +607,7 @@ class group:
         ----
         Sum of residuals for each center
         """
-        if not hasattr(self, "res"):
+        if not hasattr(self, "_res"):
             self.res_analysis()
         return self._res
     
@@ -540,7 +658,7 @@ class group:
             the value vs t of data[i,:] for i in index
         """
         avg = cast(self.avg_id, py_object).value
-        return avg.plot_time_evo(self.arr.tolist, var=self.var, title=title, label=self.cart)
+        return avg.plot_time_evo(self.arr.tolist(), var=self.var, title=title, label=list(self.cart))
     
     def distrib_sep(self, bins: int = 36, title: str = "", alpha: float = 0.0):
         """
@@ -568,7 +686,7 @@ class group:
             to_return.append(avg.plot_distrib(a, bins=bins, var=self.var, title=title, label=self.cart[n], alpha=alpha))
         return to_return
     
-    def distrib(self, bins: int = 36, title: str = "", alpha: float = 0.0):
+    def distrib(self, bins: int = 36, title: str = "", alpha: float = 0.0):  
         """
         Note
         ----
@@ -589,9 +707,9 @@ class group:
             the value vs t of data[i,:] for i in index
         """
         avg = cast(self.avg_id, py_object).value
-        return avg.plot_distrib(self.arr, bins=bins, var=self.var, title=title, label=self.cart)
+        return avg.plot_distrib(self.arr.tolist(), bins=bins, var=self.var, title=title, label=list(self.cart), alpha=alpha)
             
-    def get_avg_values(self, basin: int = 1):  # TODO: overwrite issues
+    def get_avg_values(self, basin: int = 1, overwrite: bool = False):  # TODO: overwrite issues
         """
         Note
         ----
@@ -602,18 +720,20 @@ class group:
         basin: int/"res"
             if basin=n the n-th to last basin per weight is used (1=first basin, 2=second basin...)
             "res" uses the basin that minimises residual sums
+        overwrite: bool
+            whether present basins should be overwritten or not, default is False
             
         Returns
         -------
         the average values
         """
-        if not hasattr(self,"_avg_values"):
+        if not hasattr(self,"_avg_values") or overwrite:
             vals = []
-            if type(basin) == int:
+            if type(basin) in [int, np.int32, np.int64]:
                 tosub = self.centers[self.selected][nthtolast(self.weights[self.selected], basin)]  
             elif basin == "res":
-                self.select_res
-                tosub = self.centers[self.selected][mindidx(self.res)[1]]
+                self.select_res()
+                tosub = self.centers[self.selected][mindidx(self.res)[1]]  # center with lowest residuals
             else:
                 raise ValueError("unrecognised value for \"basin\": it must be an implemented method to select the basin")
             avg = cast(self.avg_id, py_object).value
@@ -647,7 +767,7 @@ def intersect_lists(ll: list):  # tested to be faster than other possible method
         intersec = intersec & set(l)
     return list(intersec)
 
-def intersect_groups(grouplist: list, basin: int = 1):
+def intersect_groups(grouplist: list, basin: Union[int, str] = 1):  
     """
     Note
     ----
@@ -656,7 +776,7 @@ def intersect_groups(grouplist: list, basin: int = 1):
     
     Parameters
     ----------
-    basin: int/"res"
+    basin: int/"res"/
         if basin=n the n-th to last basin per weight is used (1=first basin, 2=second basin...)
         "res" uses the basin that minimises residual sums
     
@@ -665,12 +785,12 @@ def intersect_groups(grouplist: list, basin: int = 1):
     list
         The intersection of these basins (list of framenumbers)
     """
-    if type(basin) == int:
+    if type(basin) in [int, np.int32, np.int64]:
         get_frames = lambda gr: gr.basins[gr.selected][nthtolast(gr.weights[gr.selected], basin)]  
     elif basin == "res":
         def get_frames(gr):
-            gr.select_res
-            return gr.centers[gr.selected][mindidx(gr.res)[1]]
+            gr.select_res()
+            return gr.basins[gr.selected][mindidx(gr.res)[1]]  # center with lowest residuals
     ll = [get_frames(gr) for gr in grouplist]
     return intersect_lists(ll)
 
@@ -687,7 +807,7 @@ def agreement_lists(ll: list):
     """
     return len(intersect_lists(ll))/max([len(l) for l in ll])
 
-def agreement_groups(grouplist: list, basin: int = 1):
+def agreement_groups(grouplist: list, basin: int = 1):  
     """
     Parameters
     ----------
@@ -698,7 +818,7 @@ def agreement_groups(grouplist: list, basin: int = 1):
     float
         the percentage of frames which appear in all selected basins
     """
-    if type(basin) == int:
+    if type(basin) in [int, np.int32, np.int64]:
         get_frames = lambda gr: gr.basins[gr.selected][nthtolast(gr.weights[gr.selected], basin)]  
     elif basin == "res":
         def get_frames(gr):
@@ -729,12 +849,12 @@ class ic_averager:
         c_table: pd.DataFrame
             conversion table from cart1 to zmat1
         """
-        self.source = source 
-        self.bonds = bonds
-        self.angles = angles
-        self.dih = dih
-        self.zmat1 = zmat1
-        self.c_table = c_table
+        self.source = c.copy(source)
+        self.bonds = bonds.copy()
+        self.angles = angles.copy()
+        self.dih = dih.copy()
+        self.zmat1 = zmat1.copy()
+        self.c_table = c_table.copy()
         self.zmat = None
         self.cart = None
         self.natoms = self.dih.shape[0] 
@@ -748,7 +868,7 @@ class ic_averager:
         else:
             raise AttributeError("Wrong shape for bond array")
     
-    def add_pseudo(self, name, arr):
+    def add_pseudo(self, name: str, arr: np.ndarray, overwrite: bool = False):  
         """
         Note
         ----
@@ -760,6 +880,8 @@ class ic_averager:
             desired name for the pseudo coordinate
         arr: np.array
             the array of pseudo coordinate values
+        overwrite: bool
+            whether we should overwrite values or raise an error if the pseudocoordinate exists already
             
         Sets
         ----
@@ -768,9 +890,11 @@ class ic_averager:
         nframes = arr.shape[0] if len(arr.shape) == 1 else arr.shape[1]
         if nframes != self.nframes:
             raise ValueError("The number of frames does not match!!")
+        if not overwrite and hasattr(self, name):
+            raise ValueError("This pseudo-coordinate seems to be already there! Check, and use \"overwrite=True\" in case")
         setattr(self, name, arr)
         
-    def pseudos_from(self, var="", **kwargs):
+    def pseudos_from(self, var: str = "", overwrite: bool = False, **kwargs):  
         """
         Note
         ----
@@ -784,8 +908,11 @@ class ic_averager:
         var: str
             the variable type to use to obtain pseudo, if only one
             otherwise use default, which is ""
+        
+        overwrite: bool
+            whether we should overwrite values or raise an error if the pseudocoordinate exists already
         **kwargs: dict
-            "pseudo_name"1: function1
+            "pseudo_name1": function1
             "pseudo_name2": function2
         
         Sets
@@ -794,21 +921,25 @@ class ic_averager:
             k depends on your function, most commonly 1
         """
         if var:  # we can use apply_along_axis
-            var = vdict[var]
-            arr = getattr(self, var) if var == "dih" else getattr(self+"s",var)
+            var = vdp[var]
+            arr = getattr(self, var)
             for coord, func in kwargs.items():
+                if not overwrite and hasattr(self, coord):
+                    raise ValueError("This pseudo-coordinate seems to be already there! Check, and use \"overwrite=True\" in case")
                 pseudo = np.apply_along_axis(func, 0, arr)
                 if len(pseudo.shape) == 1:
                     pseudo = pseudo.reshape(1,-1)
                 setattr(self, coord, pseudo)
         else:
-            pseudo = np.zeros(self.nframes)
-            for f in range(self.nframes):
-                bonds, angles, dih = self.bonds[:, f], self.angles[:, f], self.dih[:,f]
-                for coord, func in kwargs.items():
+            for coord, func in kwargs.items():
+                if not overwrite and hasattr(self, coord):
+                    raise ValueError("This pseudo-coordinate seems to be already there! Check, and use \"overwrite=True\" in case")
+                pseudo = np.zeros(self.nframes)
+                for f in range(self.nframes):
+                    bonds, angles, dih = self.bonds[:, f], self.angles[:, f], self.dih[:,f]  # test 2d pseudo
                     pseudo[f] = func(bonds=bonds, angles=angles, dih=dih)
-            setattr(self, coord, pseudo)    
-            
+                setattr(self, coord, pseudo)
+                
     def __getitem__(self, key):
         """
         Parameters
@@ -821,15 +952,25 @@ class ic_averager:
         if key is int, cc.zmat
         if key is slice, ic_avg
         """
-        if type(key) == int:
+        if type(key) in [int, np.int32, np.int64]:
             sliced = self.zmat1.copy()
-            sliced._frame["bonds"] == self.bonds[key] if self.avg_bond_angles == False else self.bonds
-            sliced._frame["angles"] == self.angles[key] if self.avg_bond_angles == False else self.angles
-            sliced._frame["dihedral"] = self.dih[key]
+            sliced._frame["bond"] = self.bonds[:,key] if self.avg_bond_angles == False else self.bonds
+            sliced._frame["angle"] = self.angles[:,key] if self.avg_bond_angles == False else self.angles
+            sliced._frame["dihedral"] = self.dih[:,key]
         else:
             slice_ = slicestr(key)
             source = "from {} with {}".format(id(self), slice_)
-            sliced = ic_averager(source, self.bonds[key], self.angles[key], self.dih[key], self.zmat1, self.c_table)
+            sliced = ic_averager(source, self.bonds[:,key], self.angles[:,key], self.dih[:,key], self.zmat1, self.c_table)
+            sliced.zmat1._frame["bond"] = sliced.bonds[:,0] if self.avg_bond_angles == False else sliced.bonds  # updating zmat1 to be as frame 0
+            sliced.zmat1._frame["angle"] = sliced.angles[:,0] if self.avg_bond_angles == False else sliced.angles  # updating zmat1 to be as frame 0
+            sliced.zmat1._frame["dihedral"] = sliced.dih[:,0]  # updating zmat1 to be as frame 0
+            builtin = ["bonds", "angles", "dih", "source", "avg_bond_angles", "c_table", "zmat1", "zmat", "cart", "natoms", "nframes"]
+            pseudos = [i for i in self.__dict__.keys() if i not in builtin]
+            pseudos = [i for i in pseudos if type(getattr(self,i)) == np.ndarray]  # only if arrays
+            for pseu in pseudos:
+                orig = getattr(self,pseu)
+                new = orig[list(key)] if type(key)== tuple else orig[key] if len(orig.shape) == 1 else orig[:,key]
+                setattr(sliced, pseu, new)
         return sliced
     
     def __repr__(self):
@@ -839,17 +980,16 @@ class ic_averager:
         Representation for ic_avg, returns natoms, nframes, zmat1
         """
         string = "{} atoms for {} frames".format(self.natoms,self.nframes)
-        frame = self.zmat1.frame_.__str__()
+        frame = self.zmat1._frame.__str__()
         return "{}\n{}".format(string, frame)
         
     
     def copy(self):
         """Copies the ic_averager        
         """
-        import copy as c
         return c.copy(self)
     
-    def cart_to_ic(self, arr: Union[int, list, tuple, np.array]):
+    def cart_to_ic(self, arr: Union[int, list, tuple, np.array]):  # test combination with plotting
         """
         Note
         ----
@@ -865,6 +1005,8 @@ class ic_averager:
         np.array
             the array in ic-numbering
         """
+        if type(arr) in [int, np.int32, np.int64]:
+            arr = [arr]
         return np.array([self.c_table.index.get_loc(i) for i in arr])
     
     def ic_to_cart(self, arr: Union[int, list, tuple, np.array]):
@@ -883,6 +1025,8 @@ class ic_averager:
         np.array
             the array in cartesian-numbering
         """
+        if type(arr) in [int, np.int32, np.int64]:
+            arr = [arr]
         return np.array(self.c_table.index[arr])
     
     @classmethod
@@ -1095,7 +1239,7 @@ class ic_averager:
         return cls(int_coord_file, bonds, angles, dih, zmat1, c_table)
     
     def plot_time_evo(self, index: Union[list,int], var: str = "dihedral",
-                      title: str = "", pos_range: bool = True,
+                      title: str = "", pos_range: Union[bool, type(None)] = None,
                       label: Union[list, str] = []):
         """
         Note
@@ -1121,16 +1265,19 @@ class ic_averager:
         plt.figure
             the value vs t of data[i,:] for i in index
         """
-        data = getattr(self,vdict[var])
-        if vdict[var] == "dih":
-            pos_range = self.use_c
+        index = index if type(index) == list else [index]  # make list if is not
+        if vdp[var] == "dih" and pos_range == None:
+            pos_range = True if sum([1 if i in self.use_c else -1 for i in index])> 0 else False  # looks at all dihedrals
+            data = getattr(self, "dih_c" if pos_range else "dih")
+        else:
+            data = getattr(self,vdp[var])
         if not label:
             label = list(self.c_table.index[index])
         return plot_time_evo(data, index, var=var, title=title, pos_range=pos_range, label=label)
     
     def plot_distrib(self, index: Union[list,int], bins: int = 36,
                  var: str = "dihedral", title: str = "",
-                 pos_range: bool = True, label: Union[list,str] = [], alpha: float = 0.0):
+                 pos_range: bool = None, label: Union[list,str] = [], alpha: float = 0.0):
         """
         Note
         ----
@@ -1159,16 +1306,19 @@ class ic_averager:
         plt.figure
             the histogram with distribution of data[i,:] for i in index
         """
-        data = getattr(self,vdict[var])
-        if vdict[var] == "dih":
-            pos_range = self.use_c
+        index = index if type(index) == list else [index]  # make list if is not
+        if vdp[var] == "dih" and pos_range == None:
+            pos_range = True if sum([1 if i in self.use_c else -1 for i in index])> 0 else False  # looks at all dihedrals
+            data = getattr(self, "dih_c" if pos_range else "dih")
+        else:
+            data = getattr(self,vdp[var])
         if not label:
             label = list(self.c_table.index[index])
         return plot_distrib(data, index, bins=bins, var=var, title=title,pos_range=pos_range, label=label, alpha=alpha)
         
     def plot_2Ddistrib(self, index: list, var: Union[list, tuple, str] = "dihedral", bins: int = 36,
                  labels: list= [],  title: str = "",
-                 pos_range: Union[list,bool] = False, label: Union[list,str] = []):
+                 pos_range: Union[list,bool] = None, label: Union[list,str] = []):
         """Plots value occurrence vs value
         Parameters
         ----------
@@ -1191,15 +1341,21 @@ class ic_averager:
         plt.figure
             the histogram with distribution of data[i,:] for i in index
         """
-        var = [vdict[v] for v in var]
-        data = getattr(self,vdict[var])
-        if not pos_range:
+        if type(var) == str:
+            var = [var, var]
+        var = [vdp[v] if v in vdp.keys() else v for v in var]
+        if pos_range == None:
+            pos_range = [None, None]
+            data = [None, None]
             for n,v in enumerate(var):
                 if v == "dih":
-                    pos_range[n] = self.use_c[index[n]]
+                    pos_range[n] = index[n] in self.use_c
+                    data[n] = self.dih_c if pos_range[n] else self.dih
+                else:
+                    data[n] = getattr(self, v)
         if not label:
             label = list(self.c_table.index[index])
-        return plot_2Ddistrib(data, index, bins=bins, title=title, pos_range=pos_range, label=label)
+        return plot_2Ddistrib(data, index, var=var, bins=bins, title=title, pos_range=pos_range, label=label)
 
     def correct_quasilinears(self, method: str = "std"):
         """ Fixes wrong averaging for dihedrals around + or - 180.
@@ -1218,16 +1374,14 @@ class ic_averager:
             updates dihedrals in zmat(avg)
         """
         if method == "std":
-            if not hasattr(self,"use_c"):
+            if not hasattr(self,"_use_c"):
                 diff_std = self.dih_c_std - self.dih_std
-                self.use_c = np.where(diff_std < 0)[0]  # where it's better to use 0-360 range
-            try:
-                self.zmat._frame["dihedral"].values[self.use_c] = self.dih_c_mean[self.use_c]
-            except:
-                print("zmat not defined yet, so only setting self.use_c")
-    
+                self._use_c = np.where(diff_std < 0)[0]  # where it's better to use 0-360 range
     def std_analysis(self, var="dih", thresh_min: Union[float, int] = 90, thresh_max: Union[float, int] = 180, group_name: str = "rotate"):
         """
+        Note
+        ----
+        Generally 90-180 works for freely rotating groups, while 37/40-90 works for conformational equilibrium (tested on cyclohexene in retinal)
         Parameters
         ----------
         var: str
@@ -1244,7 +1398,7 @@ class ic_averager:
         self.[group_name]: list[groups]
             list of detected groups
         """
-        var = vdict[var] if var in vdict.keys() else var if var in vdict.keys() else var
+        var = vdp[var] if var in vdp.keys() else var 
         if var == "dih":
             detected = np.arange(3,self.natoms)[np.logical_and(np.minimum(self.dih_std[3:], self.dih_c_std[3:]) > thresh_min,np.minimum(self.dih_std[3:], self.dih_c_std[3:]) < thresh_max)]
             group_list, done = [], []
@@ -1254,7 +1408,7 @@ class ic_averager:
                     b2s_arr = [self.c_table.index.get_loc(j) for j in b2s_cart]  # passing to arr numbering
                     done.extend(b2s_arr)
                     gr = group(b2s_arr, id(self), var="dih")
-                    setattr(gr,"cart", b2s_cart)  # not "gr.cart = because @property
+                    setattr(gr,"_cart", b2s_cart)  # not "gr.cart = because @property
                     group_list.append(gr)
         elif var in ["bond", "angle"]:
             shift = 2 if var == "angle" else 1
@@ -1264,7 +1418,7 @@ class ic_averager:
             
         setattr(self, group_name, group_list)
         print("Obtained {} with thresholds: [{},{}]".format(group_name, thresh_min, thresh_max))
-        print("Resulting in groups:\n {}".format("    ".join(group_list)))
+        print("Resulting in groups:\n{}".format("\n".join([str(i) for i in group_list])))
     
     def find_clusters(self, var: str = "", index: Union[None, int] = None, min_centers: int = 1, max_centers: int =3):
         """
@@ -1294,7 +1448,7 @@ class ic_averager:
         if var == "":
             print("no variable type specified, supposing it is \"dihedral\"")
             var = "dih"
-        var = vdict[var] if var in vdict.keys() else var
+        var = vdp[var] if var in vdp.keys() else var
         if var == "dih":
             if hasattr(self, "use_c"):
                 (arr, using_c) = (self.dih_c[index],True) if index in self.use_c else (self.dih[index], False)
@@ -1313,7 +1467,7 @@ class ic_averager:
         centers = [conv_d(i) for i in list(it.chain.from_iterable(xmeans_instance.get_centers()))] if using_c else list(it.chain.from_iterable(xmeans_instance.get_centers()))
         return basins, centers
     
-    def get_bins(self, var: str, index: int, bins: int = 5, range_: tuple = ()):
+    def get_bins(self, var: str, index: int, bins: int = 5, range_: tuple = ()):  # test
         """
         Note
         ----
@@ -1333,25 +1487,47 @@ class ic_averager:
             Otherwise, values outside the range are ignored
         """
         from scipy.sparse import csr_matrix
-        var = vdict[var] if var in vdict.keys() else var
-        values = getattr(self, var+"s")[index,:] if var in ["bonds", "angles"] else getattr(self, var)[index,:]
+        var = vdp[var] if var in vdp.keys() else var
+        values = getattr(self, var)[index,:]
         frames = np.arange(self.nframes)
+        shape = [bins, len(frames)]  # shape can be inferred but it is probably faster to give it
+        includes_max = False
         if not range_:
             range_ = (values.min(), values.max())
         else:
             in_range = np.logical_and(values >= range_[0], values <= range_[1])
             frames = frames[in_range]  # frame numbers
             values = values[in_range]
-        digitized = (float(bins)/(range_[0] - range_[1])*(values - range_[0])).astype(int)  # array of what bin each frame is in
-        digitized[digitized == bins] = bins -1  # so that last bin includes max
-        shape = (bins+1, frames)  # shape can be inferred but it is probably faster to give it
+        digitized = (float(bins)/(range_[1] - range_[0])*(values - range_[0])).astype(int)  # array of what bin each frame is in
+        if bins in digitized:
+            digitized[digitized == bins] = bins -1  # so that last bin includes max
+            shape[0] += 1
+            includes_max = True
         S = csr_matrix((values, [digitized, frames]), shape=shape)
-        return np.split(S.indices, S.indptr[1:-1])[:-1]  # last bin empty (only max values but we moved them to second to last bin)
-
+        to_return = np.split(S.indices, S.indptr[1:-1])[:-1] if includes_max else np.split(S.indices, S.indptr[1:-1])
+        # last bin empty (only max values but we moved them to second to last bin)
+        return to_return
+    
+    def select_remaining(self, groupset_name: str, criterion: Union[str, callable]):
+        """
+        Parameters
+        ----------
+        groupset_name: str
+            group to act on (rotate, oscillate, ...)
+        criterion: str/callable
+        
+        Sets
+        ----
+        group._selected for any group in self.groupset_name which did not have such attribute
+        """
+        groupset = getattr(self, groupset_name)
+        for gr in groupset:
+            if not hasattr(gr, "_selected"):
+                gr.select(criterion)
+            
     def average(self, out_file: str = "averaged.xyz", overwrite: bool = False,
                            view: bool = True, viewer: str = "avogadro",
-                           correct_quasilinears: str = "std",
-                           basin=1):
+                           basin=1):  
         """Averages the internal coordinates. Rotate/ing refers to fully/freely rotating groups,
         oscillate/ing refers to groups oscillating between two conformers.
         
@@ -1361,45 +1537,40 @@ class ic_averager:
             where to write the averaged structure. default is "averaged.xyz"
         overwrite: bool
             whether out_file can be overwritten. if False it creates averaged_n.xyz with n=1,2...
-        correct_quasilinears: str
-            how quasilinear dihedrals should be corrected. "no" to skip  
+            
         Sets
         -------
         self.zmat
             cc.Zmat of the averaged structure
         """
-        options = {"correct_quasilinears": ["no", "std"]}
-        if correct_quasilinears not in options["correct_quasilinears"]:
-            raise ValueError("correct_quasilinears can be among {}".format(", ".join(options["correct_quasilinears"])))
-            
         self.zmat = self.zmat1.copy()
         self.zmat._frame["bonds"] == self.bonds if self.avg_bond_angles else self.bonds.mean(axis=1) 
         self.zmat._frame["angles"] == self.angles if self.avg_bond_angles else self.angles.mean(axis=1)
         self.zmat._frame["dihedral"] = self.dih_mean
-        
-        if correct_quasilinears != "no":
-            self.correct_quasilinears(correct_quasilinears)
+        if hasattr(self, "_use_c"):
+            self.zmat._frame["dihedral"].values[self._use_c] = self.dih_c_mean[self._use_c]
         builtin = ["bonds", "angles", "dih", "source", "avg_bond_angles", "c_table", "zmat1", "zmat", "cart", "natoms", "nframes"]
         groupsets = [i for i in self.__dict__.keys() if i not in builtin]  # no builtins
-        groupsets = [i for i in groupsets if type(i[0]) == group]  # only if first element is a group
+        groupsets = [i for i in groupsets if type(getattr(self,i)[0]) == group]  # only if first element is a group
         for gs in groupsets:
-            for gr in gs:
-                self.zmat._frame["dihedral"].values[gs.arr] = gs.get_avg_values(basin=basin)
+            for gr in getattr(self,gs):
+                self.zmat._frame["dihedral"].values[gr.arr] = gr.get_avg_values(basin=basin)
         self.cart = self.zmat.get_cartesian()
-        if overwrite or not os.path.exists(out_file):
-            self.cart.to_xyz(out_file)
-        else:
-            splt = out_file.split(".")
-            bname = ".".join(splt[:-1])
-            ext = splt[-1]
-            count = 1
-            while os.path.exists(out_file):
-    
-                out_file = "{}_{}.{}".format(bname,count,ext)
-                count += 1
-            self.cart.to_xyz(out_file)
-        if view == True:
-            self.cart.view(viewer=viewer)
+        if out_file:
+            if overwrite or not os.path.exists(out_file):
+                self.cart.to_xyz(out_file)
+            else:
+                splt = out_file.split(".")
+                bname = ".".join(splt[:-1])
+                ext = splt[-1]
+                count = 1
+                while os.path.exists(out_file):
+        
+                    out_file = "{}_{}.{}".format(bname,count,ext)
+                    count += 1
+                self.cart.to_xyz(out_file)
+            if view == True:
+                self.cart.view(viewer=viewer)
     
     ### NB all @property are "very" private and do not change. zmat._frame["dihedral"] does        
     @property
@@ -1431,81 +1602,10 @@ class ic_averager:
         if not hasattr(self, "_dih_c_std"):
             setattr(self, "_dih_c_std", self.dih_c.std(axis=1))
         return getattr(self, "_dih_c_std")
-
-def str2cart(xyz_str: str, start_index: int = 1):
-    """Gets cc.cartesian from string
-
-    Note1
-    ----
-    StringIO must be imported differently according to the sys version.
-    use :
-    import sys
-    if sys.version_info[0] < 3:
-        from StringIO import StringIO
-    else :
-        from io import StringIO
-
-    Note2
-    -----
-    StringIO can be used only once!
-
-    Parameters
-    ----------
-    xyz_str : str
-        xyz as a string.
-    start_index : int
-        starting point of the index for the DataFrame
-    Returns
-    -------
-    chemcoordc.Cartesian
-        chemcoord cartesian object (with bonds detected)
-    """
-    tofeed = StringIO(xyz_str)
-    mol = cc.Cartesian.read_xyz(tofeed, start_index=start_index)
-    return mol
+    @property 
+    def use_c(self):
+        if not hasattr(self,"_use_c"):
+            self.correct_quasilinears()
+        return self._use_c
 
 
-def str2zmat(xyz_str, c_table, start_index=1):
-    """Gets cc.zmat from string
-
-    Note1
-    ----
-    StringIO must be imported differently according to the sys version.
-    use :
-    import sys
-    if sys.version_info[0] < 3 :
-        from StringIO import StringIO
-    else :
-        from io import StringIO
-
-    Note2
-    -----
-    StringIO can be used only once!
-
-    Parameters
-    ----------
-    xyz_str : str
-        xyz as a string.
-    start_index : int
-        starting point of the index for the DataFrame
-    Returns
-    -------
-    chemcoordc.Cartesian
-        chemcoord cartesian object (with bonds detected)
-    """
-    tofeed = StringIO(xyz_str)
-    mol = cc.Cartesian.read_xyz(tofeed, start_index=start_index)
-    zmat = mol.get_zmat(c_table)
-    return zmat
-
-def conv_d(d: int):
-    """Convert angles from (0, 360) range
-       to (-180, 180) range.
-
-    Parameters
-    ----------
-    d : int
-        Degrees in (-180, 180) range.
-    """
-    r = d % 360
-    return r - (r // 180) * 360 
