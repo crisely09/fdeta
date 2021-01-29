@@ -226,10 +226,11 @@ def plot_2Ddistrib(data: Union[np.ndarray, list], index: list, var: Union[list, 
     ax.set_title(title)
     return fig
 
-def plot_distrib(data: np.ndarray, index: Union[list,int], bins: int = 36,
+def plot_distrib(data: np.ndarray, index: Union[list,int],
+                 basins: Union[bool, np.ndarray] = False, bins: int = 36,
                  var: str = "dihedral", title: str = "",
                  pos_range: bool = True, label: Union[list, str, int] = [],
-                 alpha: float = 0.0):  
+                 alpha: float = 0.0, legend: bool = True):  
     """Plots value occurrence vs value
     Parameters
     ----------
@@ -250,6 +251,8 @@ def plot_distrib(data: np.ndarray, index: Union[list,int], bins: int = 36,
         label(s) for the series to plot. length must match that of index
     alpha: float
         transparency. default uses 1.0 for 1 distribution, 0.75 for 2, 0.5 for more
+    legend: bool
+        whether to plot the legend
         
     Returns
     -------
@@ -273,20 +276,28 @@ def plot_distrib(data: np.ndarray, index: Union[list,int], bins: int = 36,
     if not alpha:
         alpha = 1.0 if len(index) == 1 else 0.75 if len(index) == 2 else 0.5
     if range_:
-        for n,i in enumerate(index):
-            ax.hist(data[i, :], bins=bins, range=range_, label=label[n], alpha=alpha)
+        if not basins:
+            for n,i in enumerate(index):
+                ax.hist(data[i, :], bins=bins, range=range_, label=label[n], alpha=alpha)
+        else:
+            for b in basins:
+                for n,i in enumerate(index):
+                    ax.hist(data[i, :][b], bins=bins, range=range_, label=label[0], alpha=alpha)
     else:
         for n,i in enumerate(index):
             ax.hist(data[i, :], bins=bins, label=label[n], aplha=alpha)
     ax.set_ylabel("occurrence") 
-    ax.legend()
+    if legend:
+        ax.legend()
     ax.set_xlabel(var)
     ax.set_title(title)
     return fig
 
 
 def plot_time_evo(data: np.ndarray, index: Union[list,int], var: str = "dihedral",  
-                  title: str = "", pos_range: bool = True, label: Union[list, str, int] = []):
+                  basins: Union[bool, np.ndarray] = False, title: str = "",
+                  pos_range: bool = True, label: Union[list, str, int] = [],
+                  legend: bool = True):
     """Plots value vs time for one or more variables
     Parameters
     ----------
@@ -303,6 +314,8 @@ def plot_time_evo(data: np.ndarray, index: Union[list,int], var: str = "dihedral
         Only applies for var=="dih". 
     label: list/str
         label(s) for the series to plot. length must match that of index
+    legend: bool
+        whether to plot the legend
     
     Returns
     -------
@@ -319,11 +332,17 @@ def plot_time_evo(data: np.ndarray, index: Union[list,int], var: str = "dihedral
         label = [str(i) for i in index]
     elif type(label) in [str,int, np.int32, np.int64]:
         label = [label]
-    for n,i in enumerate(index):
-        ax.scatter(x, data[i, :], label=label[n])
+    if basins:
+        for b in basins:
+            for n,i in enumerate(index):
+                ax.scatter(x[b], data[i, :][b], label=label[0])
+    else:
+        for n,i in enumerate(index):
+            ax.scatter(x, data[i, :], label=label[n])
     ax.set_ylabel(var)  
     ax.set_xlabel("frame")
-    ax.legend()
+    if legend:
+        ax.legend()
     ax.set_title(title)
     if var == "dih":
         if not pos_range:
@@ -594,9 +613,9 @@ class group:
             for na,angle in enumerate(self.centers):  # over angles in group
                 others = [(m,i) for m,i in enumerate(self.arr) if m != na]  # (numbering in group, numbering in ic) for other_angle != angle
                 mdiffs = [(conv_d(avg.dih[self.arr[na],:] - avg.dih[[i[1]],:])).mean() for i in others]  # mean differences other-angle over the trajectory
-                for nc,c in enumerate(self.centers[na]):  # centers for that angle
+                for nc,c_ in enumerate(self.centers[na]):  # centers for that angle
                     for no,o in enumerate(others):
-                        expected = conv_d(c - mdiffs[no])   # expected value based on avg diff
+                        expected = conv_d(c_ - mdiffs[no])   # expected value based on avg diff
                         res[na][nc] += min([abs(expected - i) for other in others for i in self.centers[other[0]]])  # abs diff between expected and center
         self._res = res
             
@@ -619,7 +638,7 @@ class group:
         """
         self.selected = mindidx(self.res)[0]
     
-    def time_evo_sep(self, title: str = ""):
+    def time_evo_sep(self, title: str = "", centers: bool = False, basins: bool = False, legend: bool = True):
         """
         Note
         ----
@@ -638,7 +657,11 @@ class group:
         avg = cast(self.avg_id, py_object).value
         to_return = []
         for n,a in enumerate(self.arr):
-            to_return.append(avg.plot_time_evo(a, var=self.var, title=title, label=self.cart[n]))
+            fig = avg.plot_time_evo(a, basins=self.basins[n] if basins else False, var=self.var, title=title, label=self.cart[n], legend=legend)
+            if centers:
+                ax = fig.axes[0]
+                ax.hlines(self.centers[n], *ax.get_xlim(), linestyle="--", alpha=0.5)
+            to_return.append(fig)
         return to_return
     
     def time_evo(self, title: str = ""):
@@ -660,7 +683,7 @@ class group:
         avg = cast(self.avg_id, py_object).value
         return avg.plot_time_evo(self.arr.tolist(), var=self.var, title=title, label=list(self.cart))
     
-    def distrib_sep(self, bins: int = 36, title: str = "", alpha: float = 0.0):
+    def distrib_sep(self, bins: int = 36, title: str = "", alpha: float = 0.0, centers: bool = False, basins: bool = False, legend: bool = True):
         """
         Note
         ----
@@ -683,7 +706,11 @@ class group:
         avg = cast(self.avg_id, py_object).value
         to_return = []
         for n,a in enumerate(self.arr):
-            to_return.append(avg.plot_distrib(a, bins=bins, var=self.var, title=title, label=self.cart[n], alpha=alpha))
+            fig = avg.plot_distrib(a, basins=self.basins[n] if basins else False, bins=bins, var=self.var, title=title, label=self.cart[n], alpha=alpha, legend=legend)
+            if centers:
+                ax = fig.axes[0]
+                ax.vlines(self.centers[n], *ax.get_ylim(), linestyle="--", alpha=0.5)
+            to_return.append(fig)
         return to_return
     
     def distrib(self, bins: int = 36, title: str = "", alpha: float = 0.0):  
@@ -709,7 +736,7 @@ class group:
         avg = cast(self.avg_id, py_object).value
         return avg.plot_distrib(self.arr.tolist(), bins=bins, var=self.var, title=title, label=list(self.cart), alpha=alpha)
             
-    def get_avg_values(self, basin: int = 1, overwrite: bool = False):  # TODO: overwrite issues
+    def get_avg_values(self, basin: int = 1, overwrite: bool = False):  
         """
         Note
         ----
@@ -730,10 +757,12 @@ class group:
         if not hasattr(self,"_avg_values") or overwrite:
             vals = []
             if type(basin) in [int, np.int32, np.int64]:
-                tosub = self.centers[self.selected][nthtolast(self.weights[self.selected], basin)]  
+                b = nthtolast(self.weights[self.selected], basin)
+                tosub = self.centers[self.selected][b]  
             elif basin == "res":
                 self.select_res()
-                tosub = self.centers[self.selected][mindidx(self.res)[1]]  # center with lowest residuals
+                b = mindidx(self.res)[1]
+                tosub = self.centers[self.selected][b]  # center with lowest residuals
             else:
                 raise ValueError("unrecognised value for \"basin\": it must be an implemented method to select the basin")
             avg = cast(self.avg_id, py_object).value
@@ -741,7 +770,10 @@ class group:
                 if n == self.selected:
                     vals.append(tosub)
                 else:
-                    diff = (conv_d(avg.dih[self.arr[self.selected],:] - avg.dih[self.arr[n],:])).mean()
+                    if self.var == "dih":
+                        diff = (conv_d(avg.dih[self.arr[self.selected],:][self.basins[self.selected][b]] - avg.dih[self.arr[n],:][self.basins[self.selected][b]])).mean()  # TODO: non-dih 
+                    else:
+                        raise NotImplementedError("Not fully implemented yet")
                     vals.append(conv_d(tosub - diff))
             self._avg_values = vals
         return self._avg_values
@@ -964,7 +996,12 @@ class ic_averager:
             sliced.zmat1._frame["bond"] = sliced.bonds[:,0] if self.avg_bond_angles == False else sliced.bonds  # updating zmat1 to be as frame 0
             sliced.zmat1._frame["angle"] = sliced.angles[:,0] if self.avg_bond_angles == False else sliced.angles  # updating zmat1 to be as frame 0
             sliced.zmat1._frame["dihedral"] = sliced.dih[:,0]  # updating zmat1 to be as frame 0
-            builtin = ["bonds", "angles", "dih", "source", "avg_bond_angles", "c_table", "zmat1", "zmat", "cart", "natoms", "nframes"]
+            if hasattr(self,"_dih_c"):
+                setattr(sliced, "_dih_c", getattr(self, "_dih_c")[:,key])
+            builtin = ["bonds", "angles", "dih", "source", "avg_bond_angles",
+                       "c_table", "zmat1", "zmat", "cart", "natoms", "nframes",
+                       '_dih_c', '_dih_c_std', '_dih_std', '_use_c',
+                       "dih_mean", "dih_c_mean", "use_c"]
             pseudos = [i for i in self.__dict__.keys() if i not in builtin]
             pseudos = [i for i in pseudos if type(getattr(self,i)) == np.ndarray]  # only if arrays
             for pseu in pseudos:
@@ -1030,8 +1067,9 @@ class ic_averager:
         return np.array(self.c_table.index[arr])
     
     @classmethod
-    def from_arrays(cls, source, atoms: Union[np.ndarray,list], arr: np.ndarray, int_coord_file: str = "internal_coordinates.npz",
-                               save: bool =True, avg_bond_angles: bool = False, dec_digits: int = 3):
+    def from_arrays(cls, atoms: Union[np.ndarray,list], arr: np.ndarray, 
+                    source: str = "", int_coord_file: str = "internal_coordinates.npz",
+                    save: bool =True, avg_bond_angles: bool = False, dec_digits: int = 3):  
         """Retrieves all internal coordinates from aligned trajectory in cartesians.
     
         Parameters
@@ -1049,7 +1087,7 @@ class ic_averager:
             Used only for ".txt" files, number of decimal digits
         """
         if not source:
-            source = "from arrays, saved in {}".format(int_coord_file)
+            source = "from cartesian arrays, saved in {}".format(int_coord_file)
         t1 = time.time()
         nframes, natoms =  arr.shape[:2]
         bonds = np.zeros((natoms, nframes))
@@ -1092,8 +1130,10 @@ class ic_averager:
         return cls(source, bonds, angles, dih, zmat1, c_table)
 #       
     @classmethod
-    def from_aligned_cartesian_file(cls, aligned_fn: str = "aligned0.xyz", int_coord_file: str = "internal_coordinates.npz",
-                               save: bool =True, avg_bond_angles: bool = False, dec_digits: int = 3):
+    def from_aligned_cartesian_file(cls, aligned_fn: str = "aligned0.xyz", 
+                                    int_coord_file: str = "internal_coordinates.npz",
+                                    source: str = "", save: bool =True,
+                                    avg_bond_angles: bool = False, dec_digits: int = 3):
         """Retrieves all internal coordinates from aligned trajectory in cartesians.
     
         Parameters
@@ -1111,6 +1151,8 @@ class ic_averager:
             Used only for ".txt" files, number of decimal digits
         """
         t1 = time.time()
+        if not source:
+            source = "from {}.".format(aligned_fn, int_coord_file)
         # Get total number of lines
         tot_lines = int(str(sp.check_output(["wc", "-l", aligned_fn]))[2:].split()[0])
         with open(aligned_fn, 'r') as file:
@@ -1160,10 +1202,11 @@ class ic_averager:
                 np.savetxt(int_coord_file[:-4] + "_dihedrals.txt", np.array(dih))
                 print("saved bonds,angles,dihedrals in {} respectively".format(", ".join(
                     [int_coord_file[:-4] + i + int_coord_file[-4:] for i in["_bonds", "_angles", "_dihedrals"]])))
-        return cls(aligned_fn, bonds, angles, dih, zmat1, c_table)
+            source += "Internal coordinates saved in {}".format(int_coord_file)
+        return cls(source, bonds, angles, dih, zmat1, c_table)
     
     @classmethod
-    def from_int_coord_file(cls, aligned_fn: str = "", int_coord_file: str = ""):
+    def from_int_coord_file(cls, source: str = "", aligned_fn: str = "", int_coord_file: str = ""):
         """ Retrieves all internal coordinates from file
         Parameters
         ----------
@@ -1236,11 +1279,13 @@ class ic_averager:
         cart = str2cart(frame_str)
         c_table = cart.get_construction_table()
         zmat1 = str2zmat(frame_str, c_table)
-        return cls(int_coord_file, bonds, angles, dih, zmat1, c_table)
+        if not source:
+            source = "from {}.".format(int_coord_file)
+        return cls(source, bonds, angles, dih, zmat1, c_table)
     
-    def plot_time_evo(self, index: Union[list,int], var: str = "dihedral",
-                      title: str = "", pos_range: Union[bool, type(None)] = None,
-                      label: Union[list, str] = []):
+    def plot_time_evo(self, index: Union[list,int], basins: Union[bool, np.ndarray] = False,
+                      var: str = "dihedral", title: str = "", pos_range: Union[bool, type(None)] = None,
+                      label: Union[list, str] = [], legend: bool = True):
         """
         Note
         ----
@@ -1265,7 +1310,7 @@ class ic_averager:
         plt.figure
             the value vs t of data[i,:] for i in index
         """
-        index = index if type(index) == list else [index]  # make list if is not
+        index = index if type(index) in [list, np.ndarray] else [index]  # make list if is not
         if vdp[var] == "dih" and pos_range == None:
             pos_range = True if sum([1 if i in self.use_c else -1 for i in index])> 0 else False  # looks at all dihedrals
             data = getattr(self, "dih_c" if pos_range else "dih")
@@ -1273,11 +1318,12 @@ class ic_averager:
             data = getattr(self,vdp[var])
         if not label:
             label = list(self.c_table.index[index])
-        return plot_time_evo(data, index, var=var, title=title, pos_range=pos_range, label=label)
+        return plot_time_evo(data, index, basins=basins, var=var, title=title, pos_range=pos_range, label=label, legend=legend)
     
-    def plot_distrib(self, index: Union[list,int], bins: int = 36,
-                 var: str = "dihedral", title: str = "",
-                 pos_range: bool = None, label: Union[list,str] = [], alpha: float = 0.0):
+    def plot_distrib(self, index: Union[list,int], basins: Union[bool, np.ndarray] = False,
+                     bins: int = 36, var: str = "dihedral", title: str = "",
+                     pos_range: bool = None, label: Union[list,str] = [], alpha: float = 0.0,
+                     legend: bool = True):
         """
         Note
         ----
@@ -1306,7 +1352,7 @@ class ic_averager:
         plt.figure
             the histogram with distribution of data[i,:] for i in index
         """
-        index = index if type(index) == list else [index]  # make list if is not
+        index = index if type(index) in [list, np.ndarray] else [index]  # make list if is not
         if vdp[var] == "dih" and pos_range == None:
             pos_range = True if sum([1 if i in self.use_c else -1 for i in index])> 0 else False  # looks at all dihedrals
             data = getattr(self, "dih_c" if pos_range else "dih")
@@ -1314,7 +1360,7 @@ class ic_averager:
             data = getattr(self,vdp[var])
         if not label:
             label = list(self.c_table.index[index])
-        return plot_distrib(data, index, bins=bins, var=var, title=title,pos_range=pos_range, label=label, alpha=alpha)
+        return plot_distrib(data, index, basins=basins, bins=bins, var=var, title=title,pos_range=pos_range, label=label, alpha=alpha, legend=legend)
         
     def plot_2Ddistrib(self, index: list, var: Union[list, tuple, str] = "dihedral", bins: int = 36,
                  labels: list= [],  title: str = "",
@@ -1377,6 +1423,7 @@ class ic_averager:
             if not hasattr(self,"_use_c"):
                 diff_std = self.dih_c_std - self.dih_std
                 self._use_c = np.where(diff_std < 0)[0]  # where it's better to use 0-360 range
+                
     def std_analysis(self, var="dih", thresh_min: Union[float, int] = 90, thresh_max: Union[float, int] = 180, group_name: str = "rotate"):
         """
         Note
@@ -1551,7 +1598,7 @@ class ic_averager:
             self.zmat._frame["dihedral"].values[self._use_c] = self.dih_c_mean[self._use_c]
         builtin = ["bonds", "angles", "dih", "source", "avg_bond_angles", "c_table", "zmat1", "zmat", "cart", "natoms", "nframes"]
         groupsets = [i for i in self.__dict__.keys() if i not in builtin]  # no builtins
-        groupsets = [i for i in groupsets if type(getattr(self,i)[0]) == group]  # only if first element is a group
+        groupsets = [i for i in groupsets if type(getattr(self,i))==list and type(getattr(self,i)[0]) == group]  # only if first element is a group
         for gs in groupsets:
             for gr in getattr(self,gs):
                 self.zmat._frame["dihedral"].values[gr.arr] = gr.get_avg_values(basin=basin)
