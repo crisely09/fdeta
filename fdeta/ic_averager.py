@@ -660,7 +660,8 @@ class group:
             fig = avg.plot_time_evo(a, basins=self.basins[n] if basins else False, var=self.var, title=title, label=self.cart[n], legend=legend)
             if centers:
                 ax = fig.axes[0]
-                ax.hlines(self.centers[n], *ax.get_xlim(), linestyle="--", alpha=0.5)
+                using_c = a in avg.use_c
+                ax.hlines([i%360 for i in self.centers[n]] if using_c else [conv_d(i) for i in self.centers[n]], *ax.get_xlim(), linestyle="--", alpha=0.5)
             to_return.append(fig)
         return to_return
     
@@ -709,7 +710,8 @@ class group:
             fig = avg.plot_distrib(a, basins=self.basins[n] if basins else False, bins=bins, var=self.var, title=title, label=self.cart[n], alpha=alpha, legend=legend)
             if centers:
                 ax = fig.axes[0]
-                ax.vlines(self.centers[n], *ax.get_ylim(), linestyle="--", alpha=0.5)
+                using_c = a in avg.use_c
+                ax.vlines([i%360 for i in self.centers[n]] if using_c else [conv_d(i) for i in self.centers[n]], *ax.get_ylim(), linestyle="--", alpha=0.5)
             to_return.append(fig)
         return to_return
     
@@ -1499,6 +1501,7 @@ class ic_averager:
         if var == "dih":
             if hasattr(self, "use_c"):
                 (arr, using_c) = (self.dih_c[index],True) if index in self.use_c else (self.dih[index], False)
+                print(using_c)
             else:
                 print("Watch out! No correction of quasilinear dihedrals has been performed thus far!")
                 arr = self.dih[index]
