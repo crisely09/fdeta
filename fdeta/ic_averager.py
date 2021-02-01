@@ -23,12 +23,15 @@ else:
 
 
 rc('text', usetex=True)
-vds = {"dihedral": "dih", "d": "dih", "dih": "dih",
+vds = {"dihedral": "dih", "dihedrals": "dih", "d": "dih", "dih": "dih",  # Variable Dictionary Singular
          "angle": "angle", "angles": "angle", "a": "angle", 
          "b": "bond", "bond": "bond", "bonds": "bond"}
-vdp = {"dihedral": "dih", "d": "dih", "dih": "dih",
-         "angle": "angles", "angles": "angles", "a": "angles", 
+vdp = {"dihedral": "dih", "dihedrals": "dih",  "d": "dih", "dih": "dih",
+         "angle": "angles", "angles": "angles", "a": "angles",  # Variable Dictionary Plural
          "b": "bonds", "bond": "bonds", "bonds": "bonds"}
+vdf = {"dihedral": "dihedral", "d": "dihedral", "dih": "dihedral",  # Variable Dictionary Frame
+         "angle": "angle", "angle": "angle", "a": "angle", 
+         "b": "bond", "bond": "bond", "bonds": "bond"}
 
 # max-min funcs
 nthtolast = lambda x,y: x.index(sorted(x)[-y]) # index of n-th to last 
@@ -195,7 +198,6 @@ def plot_2Ddistrib(data: Union[np.ndarray, list], index: list, var: Union[list, 
     """
     fig = plt.figure(figsize=(20, 10), dpi=150)
     ax = fig.add_subplot(111)
-    print("var", var)
     if type(var) == str:
         var = [var, var]
     var = [vds[v] if v in vds.keys() else v for v in var]  
@@ -203,19 +205,14 @@ def plot_2Ddistrib(data: Union[np.ndarray, list], index: list, var: Union[list, 
         pos_range = [pos_range, pos_range]
     range_ = [None, None]  
     for n,v in enumerate(var):
-        print("n: {}, v: {}".format(n,v))
         if v == "dih":
             range_[n] = (0, 360) if pos_range[n] else (-180, 180)
-            print("range{}: {}".format(n,range_[n]))
         elif v == "angle":
             range_[n] = (0,180)
-            print("range{}: {}".format(n,range_[n]))
-    print("range", range_)
     if type(data) == list:
         x, y = data[0][index[0], :], data[1][index[1], :]  # two diff var (e.g. bond, angle)
     else:
         x, y = data[index[0], :], data[index[1], :]
-    print("first vals", x[:5], y[:5])
     ax.hist2d(x, y, bins=[bins,bins], range=range_)
     if not label:
         ax.set_xlabel("{} {}".format(var[0],index[0]))
@@ -353,7 +350,7 @@ def plot_time_evo(data: np.ndarray, index: Union[list,int], var: str = "dihedral
         ax.set_ylim(0, 180)
     return fig
 
-class group:
+class Group:
     """
     Object for a set of variables, most commonly dihedrals, corresponding to the same chemical group.
     For instance 3 H in a methyl, or 2 H in an amino group, or 1 H in a hydroxy
@@ -383,9 +380,9 @@ class group:
         When calling group, it returns a string with ic-numbering and, if available, cartesian counting
         """
         if hasattr(self, "_cart"):
-            return "IC: {}, Cart: {}".format(self.arr.tolist(), self.cart.tolist())
+            return "{} = IC: {}, Cart: {}".format(self.var, self.arr.tolist(), self.cart.tolist())
         else:
-            return "IC: {}".format(self.arr.tolist())
+            return "{} = IC: {}".format(self.var, self.arr.tolist())
         
     def __str__(self):
         """
@@ -394,12 +391,12 @@ class group:
         When converting group to a string (e.g. printing), it returns a string with ic-numbering and, if available, cartesian counting
         """
         if hasattr(self, "_cart"):
-            return "IC: {}, Cart: {}".format(self.arr.tolist(), self.cart.tolist())
+            return "{} = IC: {}, Cart: {}".format(self.var, self.arr.tolist(), self.cart.tolist())
         else:
-            return "IC: {}".format(self.arr.tolist())
+            return "{} = IC: {}".format(self.var, self.arr.tolist())
         
     @staticmethod
-    def from_cart(cart: np.array, avg_id: int):
+    def from_cart(cart: np.array, avg_id: int, var = "dih"):
         """
         Note
         ----
@@ -416,7 +413,7 @@ class group:
             cart = np.array(cart)
         c_table = cast(avg_id, py_object).value.c_table
         arr = np.array([c_table.index.get_loc(i) for i in cart])
-        gr = group(arr, avg_id)
+        gr = Group(arr, avg_id, var=var)
         gr._cart = cart
         return gr
     
@@ -543,7 +540,7 @@ class group:
             self._prominence = [sorted(i)[-1] - sorted(i)[-2] for i in self.weights]
         return self._prominence
     
-    def select(self, criterion: Union[str, callable]):
+    def select(self, criterion: Union[str, callable]):  
         """
         Parameters
         ----------
@@ -605,6 +602,8 @@ class group:
         i.e. looks for the combination of basins which minimises difference between 
         angle differences for the basins centers and average angle differences over the trajectory
         """
+        if self.var != "dih":
+            raise ValueError("residuals are only for dihedrals")
         if len(self.centers) == 1:
             res = [[0 for c in self.centers[0]]]
         else:
@@ -738,7 +737,7 @@ class group:
         avg = cast(self.avg_id, py_object).value
         return avg.plot_distrib(self.arr.tolist(), bins=bins, var=self.var, title=title, label=list(self.cart), alpha=alpha)
             
-    def get_avg_values(self, basin: int = 1, overwrite: bool = False):  
+    def get_avg_values(self, basin: int = 1, overwrite: bool = False, return_frames : bool  = False):  
         """
         Note
         ----
@@ -754,16 +753,18 @@ class group:
             
         Returns
         -------
-        the average values
+        list if not return frames else tuple(list, np.ndarray) the average values
         """
         if not hasattr(self,"_avg_values") or overwrite:
             vals = []
             if type(basin) in [int, np.int32, np.int64]:
                 b = nthtolast(self.weights[self.selected], basin)
+                basin_frames = self.basins[self.selected][b]
                 tosub = self.centers[self.selected][b]  
             elif basin == "res":
                 self.select_res()
                 b = mindidx(self.res)[1]
+                basin_frames = self.basins[self.selected][b]
                 tosub = self.centers[self.selected][b]  # center with lowest residuals
             else:
                 raise ValueError("unrecognised value for \"basin\": it must be an implemented method to select the basin")
@@ -773,12 +774,13 @@ class group:
                     vals.append(tosub)
                 else:
                     if self.var == "dih":
-                        diff = (conv_d(avg.dih[self.arr[self.selected],:][self.basins[self.selected][b]] - avg.dih[self.arr[n],:][self.basins[self.selected][b]])).mean()  # TODO: non-dih 
+                        diff = (conv_d(avg.dih[self.arr[self.selected],:][basin_frames] - avg.dih[self.arr[n],:][basin_frames])).mean()
+                        vals.append(conv_d(tosub - diff))
                     else:
-                        raise NotImplementedError("Not fully implemented yet")
-                    vals.append(conv_d(tosub - diff))
+                        vals.append(avg.dih[self.arr[n],:][basin_frames].mean())
             self._avg_values = vals
-        return self._avg_values
+            to_return = (self._avg_values, basin_frames) if return_frames else self._avg_values
+        return to_return
 
 def intersect_lists(ll: list):  # tested to be faster than other possible methods
     """
@@ -861,7 +863,7 @@ def agreement_groups(grouplist: list, basin: int = 1):
     ll = [get_frames(gr) for gr in grouplist]
     return agreement_lists(ll)
 
-class ic_averager:
+class Ic_averager:
     """Object for averaging of molecule A in internal coordinates.
     Allows different methods to detect and fix issues such as quasilinear angles and rotating groups.
     """
@@ -994,7 +996,7 @@ class ic_averager:
         else:
             slice_ = slicestr(key)
             source = "from {} with {}".format(id(self), slice_)
-            sliced = ic_averager(source, self.bonds[:,key], self.angles[:,key], self.dih[:,key], self.zmat1, self.c_table)
+            sliced = Ic_averager(source, self.bonds[:,key], self.angles[:,key], self.dih[:,key], self.zmat1, self.c_table)
             sliced.zmat1._frame["bond"] = sliced.bonds[:,0] if self.avg_bond_angles == False else sliced.bonds  # updating zmat1 to be as frame 0
             sliced.zmat1._frame["angle"] = sliced.angles[:,0] if self.avg_bond_angles == False else sliced.angles  # updating zmat1 to be as frame 0
             sliced.zmat1._frame["dihedral"] = sliced.dih[:,0]  # updating zmat1 to be as frame 0
@@ -1024,7 +1026,7 @@ class ic_averager:
         
     
     def copy(self):
-        """Copies the ic_averager        
+        """Copies the Ic_averager        
         """
         return c.copy(self)
     
@@ -1444,8 +1446,8 @@ class ic_averager:
                 
         Sets
         ----
-        self.[group_name]: list[groups]
-            list of detected groups
+        self.[group_name]: list[Groups]
+            list of detected Groups
         """
         var = vdp[var] if var in vdp.keys() else var 
         if var == "dih":
@@ -1456,7 +1458,7 @@ class ic_averager:
                     b2s_cart = self.c_table[self.c_table["b"]==self.c_table.iloc[i]["b"]].index  # bound to the same, cartesian numbering
                     b2s_arr = [self.c_table.index.get_loc(j) for j in b2s_cart]  # passing to arr numbering
                     done.extend(b2s_arr)
-                    gr = group(b2s_arr, id(self), var="dih")
+                    gr = Group(b2s_arr, id(self), var="dih")
                     setattr(gr,"_cart", b2s_cart)  # not "gr.cart = because @property
                     group_list.append(gr)
         elif var in ["bond", "angle"]:
@@ -1501,7 +1503,6 @@ class ic_averager:
         if var == "dih":
             if hasattr(self, "use_c"):
                 (arr, using_c) = (self.dih_c[index],True) if index in self.use_c else (self.dih[index], False)
-                print(using_c)
             else:
                 print("Watch out! No correction of quasilinear dihedrals has been performed thus far!")
                 arr = self.dih[index]
@@ -1594,17 +1595,25 @@ class ic_averager:
             cc.Zmat of the averaged structure
         """
         self.zmat = self.zmat1.copy()
-        self.zmat._frame["bonds"] == self.bonds if self.avg_bond_angles else self.bonds.mean(axis=1) 
-        self.zmat._frame["angles"] == self.angles if self.avg_bond_angles else self.angles.mean(axis=1)
+        self.zmat._frame["bond"] = self.bonds if self.avg_bond_angles else self.bonds.mean(axis=1) 
+        self.zmat._frame["angle"] = self.angles if self.avg_bond_angles else self.angles.mean(axis=1)
         self.zmat._frame["dihedral"] = self.dih_mean
         if hasattr(self, "_use_c"):
             self.zmat._frame["dihedral"].values[self._use_c] = self.dih_c_mean[self._use_c]
         builtin = ["bonds", "angles", "dih", "source", "avg_bond_angles", "c_table", "zmat1", "zmat", "cart", "natoms", "nframes"]
         groupsets = [i for i in self.__dict__.keys() if i not in builtin]  # no builtins
-        groupsets = [i for i in groupsets if type(getattr(self,i))==list and type(getattr(self,i)[0]) == group]  # only if first element is a group
+        groupsets = [i for i in groupsets if type(getattr(self,i))==list and type(getattr(self,i)[0]) == Group]  # only if first element is a group
         for gs in groupsets:
+            var = vdf[getattr(self,gs)[0].var] if getattr(self,gs)[0].var in vdf.keys() else False  # False if not dih,bond,angle
+            if not var:
+                continue  # we do not average pseudos
+            else:
+                other_vars = [i for i in ["bond", "angle", "dihedral"] if i != var]
             for gr in getattr(self,gs):
-                self.zmat._frame["dihedral"].values[gr.arr] = gr.get_avg_values(basin=basin)
+                avg_vals, basin_frames = gr.get_avg_values(basin=basin, return_frames=True)  # avg_vals from group
+                self.zmat._frame[var].values[gr.arr] = avg_vals  # avg_vals for the group variable
+                for ov in other_vars:
+                    self.zmat._frame[ov].values[gr.arr] = getattr(self, vdp[ov])[gr.arr,:][:,basin_frames].mean(axis=1)  # other vars averaged over the basin only
         self.cart = self.zmat.get_cartesian()
         if out_file:
             if overwrite or not os.path.exists(out_file):
