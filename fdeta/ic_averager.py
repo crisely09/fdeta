@@ -282,7 +282,7 @@ def plot_distrib(data: np.ndarray, index: Union[list,int],
                     ax.hist(data[i, :][b], bins=bins, range=range_, label=label[0], alpha=alpha)
     else:
         for n,i in enumerate(index):
-            ax.hist(data[i, :], bins=bins, label=label[n], aplha=alpha)
+            ax.hist(data[i, :], bins=bins, label=label[n], alpha=alpha)
     ax.set_ylabel("occurrence") 
     if legend:
         ax.legend()
@@ -1314,12 +1314,13 @@ class Ic_averager:
         plt.figure
             the value vs t of data[i,:] for i in index
         """
+        var = vdp[var] if var in vdp.keys() else var
         index = index if type(index) in [list, np.ndarray] else [index]  # make list if is not
-        if vdp[var] == "dih" and pos_range == None:
+        if var == "dih" and pos_range == None:
             pos_range = True if sum([1 if i in self.use_c else -1 for i in index])> 0 else False  # looks at all dihedrals
             data = getattr(self, "dih_c" if pos_range else "dih")
         else:
-            data = getattr(self,vdp[var])
+            data = getattr(self, var)
         if not label:
             label = list(self.c_table.index[index])
         return plot_time_evo(data, index, basins=basins, var=var, title=title, pos_range=pos_range, label=label, legend=legend)
@@ -1357,11 +1358,12 @@ class Ic_averager:
             the histogram with distribution of data[i,:] for i in index
         """
         index = index if type(index) in [list, np.ndarray] else [index]  # make list if is not
-        if vdp[var] == "dih" and pos_range == None:
+        var = vdp[var] if var in vdp.keys() else var
+        if var == "dih" and pos_range == None:
             pos_range = True if sum([1 if i in self.use_c else -1 for i in index])> 0 else False  # looks at all dihedrals
             data = getattr(self, "dih_c" if pos_range else "dih")
         else:
-            data = getattr(self,vdp[var])
+            data = getattr(self, var)
         if not label:
             label = list(self.c_table.index[index])
         return plot_distrib(data, index, basins=basins, bins=bins, var=var, title=title,pos_range=pos_range, label=label, alpha=alpha, legend=legend)
