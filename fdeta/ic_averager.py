@@ -757,17 +757,16 @@ class Group:
         """
         if not hasattr(self,"_avg_values") or overwrite:
             vals = []
-            if type(basin) in [int, np.int32, np.int64]:
-                b = nthtolast(self.weights[self.selected], basin)
-                basin_frames = self.basins[self.selected][b]
-                tosub = self.centers[self.selected][b]  
-            elif basin == "res":
+            if basin == "res":
                 self.select_res()
                 b = mindidx(self.res)[1]
-                basin_frames = self.basins[self.selected][b]
-                tosub = self.centers[self.selected][b]  # center with lowest residuals
+            elif type(basin) in [int, np.int32, np.int64]:
+                b = nthtolast(self.weights[self.selected], basin)
             else:
                 raise ValueError("unrecognised value for \"basin\": it must be an implemented method to select the basin")
+            self.frames_used_idx = (c.copy(self.selected), c.copy(b))  # dual index to get basin_frames. NB: Copy!
+            basin_frames = self.basins[self.selected][b]
+            tosub = self.centers[self.selected][b]
             avg = cast(self.avg_id, py_object).value
             for n, basins in enumerate(self.basins):
                 if n == self.selected:
@@ -779,9 +778,9 @@ class Group:
                     else:
                         vals.append(avg.dih[self.arr[n],:][basin_frames].mean())
             self._avg_values = vals
-            to_return = (self._avg_values, basin_frames) if return_frames else self._avg_values
+        to_return = (self._avg_values, self.basins[self.frames_used_idx[0]][self.frames_used_idx[1]]) if return_frames else self._avg_values
         return to_return
-
+    
 def intersect_lists(ll: list):  # tested to be faster than other possible methods
     """
     Note
