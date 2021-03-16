@@ -102,7 +102,7 @@ def str2cart(xyz_str: str, start_index: int = 1):
     return mol
 
 
-def str2zmat(xyz_str, c_table, start_index=1):
+def str2zmat(xyz_str: str, c_table: pd.DataFrame, start_index: int =1):
     """Gets cc.zmat from string
 
     Note1
@@ -1070,7 +1070,7 @@ class Ic_averager:
         return np.array(self.c_table.index[arr])
     
     @classmethod
-    def from_arrays(cls, atoms: Union[np.ndarray,list], arr: np.ndarray, 
+    def from_arrays(cls, atoms: Union[np.ndarray, list], arr: np.ndarray, 
                     source: str = "", int_coord_file: str = "internal_coordinates.npz",
                     save: bool =True, avg_bond_angles: bool = False, dec_digits: int = 3):  
         """Retrieves all internal coordinates from aligned trajectory in cartesians.
@@ -1136,7 +1136,9 @@ class Ic_averager:
     def from_aligned_cartesian_file(cls, aligned_fn: str = "aligned0.xyz", 
                                     int_coord_file: str = "internal_coordinates.npz",
                                     source: str = "", save: bool =True,
-                                    avg_bond_angles: bool = False, dec_digits: int = 3):
+                                    avg_bond_angles: bool = False,
+                                    c_table: Union[pd.DataFrame, bool] = False,
+                                    dec_digits: int = 3):
         """Retrieves all internal coordinates from aligned trajectory in cartesians.
     
         Parameters
@@ -1150,12 +1152,14 @@ class Ic_averager:
             whether coordinates should be also saved (True) or just returned (False)
         avg_bond_angles: bool
             whether bonds and angles should already be averaged (for saving and returning)
+        c_table: pd.DataFrame
+            c_table to use if a specific one is needed
         dec_digits : int
             Used only for ".txt" files, number of decimal digits
         """
         t1 = time.time()
         if not source:
-            source = "from {}.".format(aligned_fn, int_coord_file)
+            source = "from {}. saved in {}".format(aligned_fn, int_coord_file)
         # Get total number of lines
         tot_lines = int(str(sp.check_output(["wc", "-l", aligned_fn]))[2:].split()[0])
         with open(aligned_fn, 'r') as file:
@@ -1174,9 +1178,10 @@ class Ic_averager:
                 frame_str = ""
                 for i in range(natoms + 2):
                     frame_str += file.readline()
-                if f == 0:
+                if c_table is False:
                     cart = str2cart(frame_str)
                     c_table = cart.get_construction_table()
+                if f == 0:
                     zmat = str2zmat(frame_str, c_table)
                     zmat1 = zmat.copy()
                 else:
@@ -1209,7 +1214,8 @@ class Ic_averager:
         return cls(source, bonds, angles, dih, zmat1, c_table)
     
     @classmethod
-    def from_int_coord_file(cls, source: str = "", aligned_fn: str = "", int_coord_file: str = ""):
+    def from_int_coord_file(cls, source: str = "", aligned_fn: str = "",
+                            int_coord_file: str = "", c_table: Union[pd.DataFrame, bool] = False):
         """ Retrieves all internal coordinates from file
         Parameters
         ----------
@@ -1218,6 +1224,8 @@ class Ic_averager:
         int_coord_file : str
             File with all the internal coordinates. ".npy" and ".npz" can be
             detected, otherwise ".txt" separate files are used.
+        c_table: pd.DataFrame
+            the c_table to use if a specific one is needed
         """
         # 1.1 Figuring out files present and extensions
         txtfiles = []
@@ -1280,7 +1288,7 @@ class Ic_averager:
             for i in range(n_atoms + 2):
                 frame_str += file.readline()
         cart = str2cart(frame_str)
-        c_table = cart.get_construction_table()
+        c_table = cart.get_construction_table() if c_table is False else c_table
         zmat1 = str2zmat(frame_str, c_table)
         if not source:
             source = "from {}.".format(int_coord_file)
