@@ -24,7 +24,8 @@ else:
 
 rc('text', usetex=True)
 vds = {"dihedral": "dih", "dihedrals": "dih", "d": "dih", "dih": "dih",  # Variable Dictionary Singular
-         "angle": "angle", "angles": "angle", "a": "angle", 
+         "dih_c": "dih_c",
+         "angle": "angle", "angles": "angle", "a": "angle",
          "b": "bond", "bond": "bond", "bonds": "bond"}
 vdp = {"dihedral": "dih", "dihedrals": "dih",  "d": "dih", "dih": "dih",
          "angle": "angles", "angles": "angles", "a": "angles",  # Variable Dictionary Plural
@@ -974,7 +975,51 @@ class Ic_averager:
                     bonds, angles, dih = self.bonds[:, f], self.angles[:, f], self.dih[:,f]  # test 2d pseudo
                     pseudo[f] = func(bonds=bonds, angles=angles, dih=dih)
                 setattr(self, coord, pseudo)
-                
+    
+    def get_displacement(self, var: str = "dih", index: Union[list, np.ndarray, int, str] = [], res: int = 1):
+        """
+        Parameters
+        ----------
+        var: str
+            the variable to use (angle, bond, dih, dih_c, some pseudo)
+        index: list/array, int, sr
+            the indexes to get the displacement for. use "all" to get all natoms
+        res: int
+            the resolution. e.g. 10 averages the values every 10 frames
+        
+        Sets
+        ----
+        self.var_d: dict
+            dictionary of {idx: [array of the displacement] for idx in indexes}
+        """
+        if not index:
+            raise ValueError("You must specify some angles! (in ic_numbering)")
+        elif type(index) in [int, np.int32, np.int64]:
+            index= [index]
+        elif index == "all":
+            index = np.arange(self.natoms)
+        var = vds[var] if var in vds.keys() else var
+        if "dih" in var:
+            indexes = [("dih_c", [i for i in index if i in self.use_c]), ("dih", [i for i in index if i not in self.use_c])]
+        else:
+            indexes = [(var, index)]
+        for j in indexes:
+            v, idx = j
+            if not hasattr(self, "{}_d".format(v)):
+                setattr(self, "{}_d".format(v), {})
+            orig = getattr(self, vdp[v]) if v in ["bond", "angle"] else getattr(self, v)
+            d = {}
+            if res == 1:
+                for i in idx:
+                    d[i] = (orig[i][1:] -orig[i][:-1], 1)
+            else:
+                for i in idx:
+                    arr = np.zeros(int(orig[i].size/res))
+                    for k in range(arr.size):
+                        arr[k] += orig[i, int(k*res):int((k+1)*res)].mean()
+                    d[i] = (arr[1:] - arr[:-1], res)
+            getattr(self, "{}_d".format(v)).update(d)
+            
     def __getitem__(self, key):
         """
         Parameters
@@ -1415,7 +1460,124 @@ class Ic_averager:
         if not label:
             label = list(self.c_table.index[index])
         return plot_2Ddistrib(data, index, var=var, bins=bins, title=title, pos_range=pos_range, label=label)
+    
+    def plot_displacement(self, index: Union[list,int], var: str = "dihedral", title: str = "displacement",
+                          label: Union[list, str] = [], legend: bool = True, res: int = 5):
+        """
+        Parameters
+        ----------
+        index: list/int
+            indexes to plot
+        var: str
+            the variable (bond, angle, dih, dih_c, some pseudo)
+        title: str
+            optional fig title
+        label: list/str
+            optional label for the different indexes plotted ()
+        legend: bool
+            whether the legend should appear or not
+        res: int
+            resolution if some displacement needs to be calculated
+        """
+        var = vds[var] if var in vds.keys() else var
+        if type(index) in [int, np.int32, np.int64]:
+            index = [index]
+        if not label:
+            label = [str(i) for i in list(self.c_table.index[index])]
+        elif type(label) in [str,int, np.int32, np.int64]:
+            label = [label]
+        if "dih" in var:
+            indexes = [
+                    ["dih_c", *list(zip(*[(i, label[n]) for n,i in enumerate(index) if i in self.use_c]))],
+                     ["dih", *list(zip(*[(i, label[n]) for n,i in enumerate(index) if i not in self.use_c]))]
+                     ]
+        else:
+            indexes = [[var, index, label]]
+        fig = plt.figure(figsize=(20, 10), dpi=150)
+        ax = fig.add_subplot(111)
+        for j in indexes:
+            if len(j) != 3:
+                continue
+            v, idx, labels = j
+            if hasattr(self, "{}_d".format(vds[v])):
+                d = getattr(self, "{}_d".format(vds[v]))
+                missing = [i for i in idx if i not in d.keys()]
+                if missing:
+                    self.get_displacement(var=v, index=missing, res=res)
+            else:
+                self.get_displacement(var=v, index=idx, res=res)
+                d = getattr(self, "{}_d".format(vds[v]))
+            for n,i in enumerate(idx):
+                ax.plot(d[i][1]*(1.5+np.arange(d[i][0].shape[0])), d[i][0], label=labels[n],  # d[i] = (disp_arr, res)
+                        marker="o", markersize=1, markeredgecolor="k", linewidth=0.5, linestyle="--")
+        ax.set_ylabel(var.replace("_","\_"))  
+        ax.set_xlabel("frame")
+        if legend:
+            ax.legend()
+        ax.set_title(title)
+        return fig
 
+    def plot_time_evo_displacement(self, index: Union[list,int], var: str = "dihedral",
+                                   title: str = "", pos_range: Union[bool, type(None)] = None,
+                                   label: Union[list, str] = [], legend: bool = True,
+                                   res: int = 5):
+        """
+        Parameters
+        ----------
+        index: list/int
+            indexes to plot
+        var: str
+            the variable (bond, angle, dih, dih_c, some pseudo)
+        title: str
+            optional fig title
+        label: list/str
+            optional label for the different indexes plotted ()
+        legend: bool
+            whether the legend should appear or not
+        res: int
+            resolution if some displacement needs to be calculated
+        """
+        var = vdp[var] if var in vdp.keys() else var
+        index = index if type(index) in [list, np.ndarray] else [index]  # make list if is not
+        if var == "dih" and pos_range == None:
+            pos_range = True if sum([1 if i in self.use_c else -1 for i in index])> 0 else False  # looks at all dihedrals
+            data = getattr(self, "dih_c" if pos_range else "dih")
+        else:
+            data = getattr(self, var)
+        if not label:
+            label = list(self.c_table.index[index])
+        elif type(label) in [str,int, np.int32, np.int64]:
+            label = [label]
+        fig = plot_time_evo(data, index, basins=False, var=var, title=title, pos_range=pos_range, label=label, legend=legend)
+        ax = fig.axes[0]
+        if "dih" in var:
+            indexes = [
+                    ["dih_c", *list(zip(*[(i, label[n]) for n,i in enumerate(index) if i in self.use_c]))],
+                     ["dih", *list(zip(*[(i, label[n]) for n,i in enumerate(index) if i not in self.use_c]))]
+                     ]
+        else:
+            indexes = [[var, index, label]]
+        for j in indexes:
+            if len(j) != 3:
+                continue
+            v, idx, labels = j
+            if hasattr(self, "{}_d".format(vds[v])):
+                d = getattr(self, "{}_d".format(vds[v]))
+                missing = [i for i in idx if i not in d.keys()]
+                if missing:
+                    self.get_displacement(var=v, index=missing, res=res)
+            else:
+                self.get_displacement(var=v, index=idx, res=res)
+                d = getattr(self, "{}_d".format(vds[v]))
+            for n,i in enumerate(idx):
+                ax.plot(d[i][1]*(1.5+np.arange(d[i][0].shape[0])), d[i][0], label="{} displ".format(label[n]),
+                marker="o", markersize=1, markeredgecolor="k", linewidth=0.5, linestyle="--")  # d[i] = (disp_arr, res)
+        if var in ["dih", "dih_c", "angle"]:
+            ax.set_ylim(-180, ax.get_ylim()[1])
+        if legend:
+            ax.legend()
+        return fig
+    
     def correct_quasilinears(self, method: str = "std"):
         """ Fixes wrong averaging for dihedrals around + or - 180.
     
@@ -1610,8 +1772,12 @@ class Ic_averager:
         if hasattr(self, "_use_c"):
             self.zmat._frame["dihedral"].values[self._use_c] = self.dih_c_mean[self._use_c]
         builtin = ["bonds", "angles", "dih", "source", "avg_bond_angles", "c_table", "zmat1", "zmat", "cart", "natoms", "nframes"]
-        groupsets = [i for i in self.__dict__.keys() if i not in builtin]  # no builtins
-        groupsets = [i for i in groupsets if type(getattr(self,i))==list and type(getattr(self,i)[0]) == Group]  # only if first element is a group
+        try:
+            groupsets = [i for i in self.__dict__.keys() if i not in builtin]  # no builtins
+            groupsets = [i for i in groupsets if type(getattr(self,i))==list and type(getattr(self,i)[0]) == Group]  # only if first element is a group
+        except:
+            groupsets = []
+            print("no groupsets")
         for gs in groupsets:
             var = vdf[getattr(self,gs)[0].var] if getattr(self,gs)[0].var in vdf.keys() else False  # False if not dih,bond,angle
             if not var:
