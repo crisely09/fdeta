@@ -771,8 +771,11 @@ class Group:
         """
         self.selected = mindidx(self.res)[0]
     
-    def time_evo_sep(self, title: str = "", centers: bool = False, basins: bool = False, legend: bool = True):
+    def time_evo_sep(self, title: str = "", centers: bool = False, basins: bool = False,
+                     legend: bool = True, displacement: bool = False, ravg: bool = False,
+                     res_displ: int = 15, res_ravg: int = 10, recalculate: bool = False):
         """
+        TODO update docstring
         Note
         ----
         Plots time evolution of each variable in group, each in a separate picture
@@ -790,7 +793,11 @@ class Group:
         avg = cast(self.avg_id, py_object).value
         to_return = []
         for n,a in enumerate(self.arr):
-            fig = avg.plot_time_evo(a, basins=self.basins[n] if basins else False, var=self.var, title=title, label=self.cart[n], legend=legend)
+            fig = avg.plot_time_evo(index=a, basins=self.basins[n] if basins else False,
+                                    var=self.var, title=title, label=self.cart[n],
+                                    legend=legend, displacement=displacement,
+                                    ravg=ravg, res_displ=res_displ, res_ravg=res_ravg,
+                                    recalculate=recalculate)
             if centers:
                 ax = fig.axes[0]
                 using_c = a in avg.use_c
@@ -798,8 +805,10 @@ class Group:
             to_return.append(fig)
         return to_return
     
-    def time_evo(self, title: str = ""):
+    def time_evo(self, title: str = "", displacement: bool = False, ravg: bool = False,
+                 res_displ: int = 15, res_ravg: int = 10, recalculate: bool = False):
         """
+        TODO update docstring
         Note
         ----
         Plots time evolution of each variable in group, all in the same picture
@@ -815,7 +824,11 @@ class Group:
             the value vs t of data[i,:] for i in index
         """
         avg = cast(self.avg_id, py_object).value
-        return avg.plot_time_evo(self.arr.tolist(), var=self.var, title=title, label=list(self.cart))
+        fig = avg.plot_time_evo(index=self.arr.tolist(), var=self.var, title=title,
+                                label=list(self.cart), displacement=displacement,
+                                ravg=ravg, res_displ=res_displ, res_ravg=res_ravg,
+                                recalculate=recalculate)
+        return fig
     
     def distrib_sep(self, bins: int = 36, title: str = "", alpha: float = 0.0, centers: bool = False, basins: bool = False, legend: bool = True):
         """
@@ -1715,8 +1728,11 @@ class Ic_averager:
     
     def plot_time_evo(self, index: Union[list,int], basins: Union[bool, np.ndarray] = False,
                       var: str = "dihedral", title: str = "", pos_range: Union[bool, type(None)] = None,
-                      label: Union[list, str] = [], legend: bool = True):
+                      label: Union[list, str] = [], legend: bool = True,
+                      displacement: bool = False, ravg: bool = False,
+                      res_displ: int = 15, res_ravg: int = 10, recalculate: bool = False):
         """
+        TODO: update docstring
         Note
         ----
         Plots the time evolution of one or more variable
@@ -1749,7 +1765,57 @@ class Ic_averager:
             data = getattr(self, var)
         if not label:
             label = list(self.c_table.index[index])
-        return plot_time_evo(data, index, basins=basins, var=var, title=title, pos_range=pos_range, label=label, legend=legend)
+        if type(label) != list:
+            label = [label]
+        fig = plot_time_evo(data, index, basins=basins, var=var, title=title, pos_range=pos_range, label=label, legend=legend)
+        if displacement or ravg:
+            marker = "P" if displacement and ravg else "o"
+            markersize = 5 if displacement and ravg else 1
+            ax = fig.axes[0]
+            if "dih" in var:
+                indexes = [
+                        ["dih_c", *list(zip(*[(i, label[n]) for n,i in enumerate(index) if i in self.use_c]))],
+                         ["dih", *list(zip(*[(i, label[n]) for n,i in enumerate(index) if i not in self.use_c]))]
+                         ]
+            else:
+                indexes = [[var, index, label]]
+            for j in indexes:
+                if len(j) != 3:
+                    continue
+                v, idx, labels = j
+                ### DISPLACEMENT
+                if displacement:
+                    if recalculate or not hasattr(self, "{}_d".format(vds[v])):
+                        self.get_displacement(var=v, index=idx, res=res_displ)
+                        d = getattr(self, "{}_d".format(vds[v]))
+                    else:
+                        d = getattr(self, "{}_d".format(vds[v]))
+                        missing = [i for i in idx if i not in d.keys()]
+                        if missing:
+                            self.get_displacement(var=v, index=missing, res=res_displ)
+                    for n,i in enumerate(idx):
+                        ax.plot(d[i][1]*(1.5+np.arange(d[i][0].shape[0])), d[i][0], label="{} displ".format(labels[n]),
+                        marker=marker, markersize=markersize, markeredgecolor="k", linewidth=0.5, linestyle="--")  # d[i] = (disp_arr, res)
+                print("marker")
+                ### RAVG
+                if ravg:
+                    if recalculate or not hasattr(self, "{}_m".format(vds[v])):
+                        self.get_ravg(var=v, index=idx, res=res_ravg)
+                        d = getattr(self, "{}_m".format(vds[v]))
+                    else:
+                        d = getattr(self, "{}_m".format(vds[v]))
+                        missing = [i for i in idx if i not in d.keys()]
+                        if missing:
+                            self.get_ravg(var=v, index=missing, res=res_ravg)
+                    for n,i in enumerate(idx):
+                        ravg_arr = d[i][0]
+                        ax.plot(np.arange(ravg_arr.shape[0]), ravg_arr, label="{} ravg".format(labels[n]),
+                        marker="o", markersize=1, markeredgecolor="k", linewidth=0.5, linestyle="--")  # d[i] = (disp_arr, res)
+            if var in ["dih", "dih_c", "angle"]:
+                ax.set_ylim(-180, ax.get_ylim()[1])
+            if legend:
+                ax.legend()
+        return fig
     
     def plot_distrib(self, index: Union[list,int], basins: Union[bool, np.ndarray] = False,
                      bins: int = 36, var: str = "dihedral", title: str = "",
@@ -1952,131 +2018,6 @@ class Ic_averager:
         ax.set_title(title)
         return fig
     
-    def plot_time_evo_displacement(self, index: Union[list,int], var: str = "dihedral",
-                                   title: str = "", pos_range: Union[bool, type(None)] = None,
-                                   label: Union[list, str] = [], legend: bool = True,
-                                   res: int = 15, recalculate: bool = False):
-        """
-        Parameters
-        ----------
-        index: list/int
-            indexes to plot
-        var: str
-            the variable (bond, angle, dih, dih_c, some pseudo)
-        title: str
-            optional fig title
-        label: list/str
-            optional label for the different indexes plotted ()
-        legend: bool
-            whether the legend should appear or not
-        res: int
-            resolution if some displacement needs to be calculated
-        """
-        # TODO update docstring
-        var = vdp[var] if var in vdp.keys() else var
-        index = index if type(index) in [list, np.ndarray] else [index]  # make list if is not
-        if var == "dih" and pos_range == None:
-            pos_range = True if sum([1 if i in self.use_c else -1 for i in index])> 0 else False  # looks at all dihedrals
-            data = getattr(self, "dih_c" if pos_range else "dih")
-        else:
-            data = getattr(self, var)
-        if not label:
-            label = list(self.c_table.index[index])
-        elif type(label) in [str,int, np.int32, np.int64]:
-            label = [label]
-        fig = plot_time_evo(data, index, basins=False, var=var, title=title, pos_range=pos_range, label=label, legend=legend)
-        ax = fig.axes[0]
-        if "dih" in var:
-            indexes = [
-                    ["dih_c", *list(zip(*[(i, label[n]) for n,i in enumerate(index) if i in self.use_c]))],
-                     ["dih", *list(zip(*[(i, label[n]) for n,i in enumerate(index) if i not in self.use_c]))]
-                     ]
-        else:
-            indexes = [[var, index, label]]
-        for j in indexes:
-            if len(j) != 3:
-                continue
-            v, idx, labels = j
-            if recalculate or not hasattr(self, "{}_d".format(vds[v])):
-                self.get_displacement(var=v, index=idx, res=res)
-                d = getattr(self, "{}_d".format(vds[v]))
-            else:
-                d = getattr(self, "{}_d".format(vds[v]))
-                missing = [i for i in idx if i not in d.keys()]
-                if missing:
-                    self.get_displacement(var=v, index=missing, res=res)
-            for n,i in enumerate(idx):
-                ax.plot(d[i][1]*(1.5+np.arange(d[i][0].shape[0])), d[i][0], label="{} displ".format(labels[n]),
-                marker="o", markersize=1, markeredgecolor="k", linewidth=0.5, linestyle="--")  # d[i] = (disp_arr, res)
-        if var in ["dih", "dih_c", "angle"]:
-            ax.set_ylim(-180, ax.get_ylim()[1])
-        if legend:
-            ax.legend()
-        return fig
-    
-    def plot_time_evo_ravg(self, index: Union[list,int], var: str = "dihedral",
-                                   title: str = "", pos_range: Union[bool, type(None)] = None,
-                                   label: Union[list, str] = [], legend: bool = True,
-                                   res: int = 15, mode: str = "same", recalculate: bool = False):
-        """
-        Parameters
-        ----------
-        index: list/int
-            indexes to plot
-        var: str
-            the variable (bond, angle, dih, dih_c, some pseudo)
-        title: str
-            optional fig title
-        label: list/str
-            optional label for the different indexes plotted ()
-        legend: bool
-            whether the legend should appear or not
-        res: int
-            resolution if some displacement needs to be calculated
-        """
-        # TODO update docstring
-        var = vdp[var] if var in vdp.keys() else var
-        index = index if type(index) in [list, np.ndarray] else [index]  # make list if is not
-        if var == "dih" and pos_range == None:
-            pos_range = True if sum([1 if i in self.use_c else -1 for i in index])> 0 else False  # looks at all dihedrals
-            data = getattr(self, "dih_c" if pos_range else "dih")
-        else:
-            data = getattr(self, var)
-        if not label:
-            label = list(self.c_table.index[index])
-        elif type(label) in [str,int, np.int32, np.int64]:
-            label = [label]
-        fig = plot_time_evo(data, index, basins=False, var=var, title=title, pos_range=pos_range, label=label, legend=legend)
-        ax = fig.axes[0]
-        if "dih" in var:
-            indexes = [
-                    ["dih_c", *list(zip(*[(i, label[n]) for n,i in enumerate(index) if i in self.use_c]))],
-                     ["dih", *list(zip(*[(i, label[n]) for n,i in enumerate(index) if i not in self.use_c]))]
-                     ]
-        else:
-            indexes = [[var, index, label]]
-        for j in indexes:
-            if len(j) != 3:
-                continue
-            v, idx, labels = j
-            if recalculate or not hasattr(self, "{}_m".format(vds[v])):
-                self.get_ravg(var=v, index=idx, res=res)
-                d = getattr(self, "{}_m".format(vds[v]))
-            else:
-                d = getattr(self, "{}_m".format(vds[v]))
-                missing = [i for i in idx if i not in d.keys()]
-                if missing:
-                    self.get_ravg(var=v, index=missing, res=res, mode=mode)
-            for n,i in enumerate(idx):
-                ravg = d[i][0]
-                ax.plot(np.arange(ravg.shape[0]), ravg, label="{} ravg".format(labels[n]),
-                marker="o", markersize=1, markeredgecolor="k", linewidth=0.5, linestyle="--")  # d[i] = (disp_arr, res)
-        if var in ["dih", "dih_c", "angle"]:
-            ax.set_ylim(-180, ax.get_ylim()[1])
-        if legend:
-            ax.legend()
-        return fig
-
     def correct_quasilinears(self, method: str = "std"):
         """ Fixes wrong averaging for dihedrals around + or - 180.
     
