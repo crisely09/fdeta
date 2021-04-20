@@ -1,7 +1,7 @@
 """Script to make one single file trajectory, one fragment from xyz."""
 
 from typing import Union
-import copy as c
+import copy as cp
 import os
 import numpy as np
 import subprocess as sp
@@ -102,6 +102,24 @@ def str2cart(xyz_str: str, start_index: int = 1):
     mol = cc.Cartesian.read_xyz(tofeed, start_index=start_index)
     return mol
 
+def intervals_from_array(arr):
+    """
+    TODO docstring
+    """
+    n = 0
+    strlst = []
+    N = len(arr)
+    while n < N:
+        start = arr[n]
+        end = False
+        while n < N -1 and arr[n+1] == arr[n] + 1:
+            n+=1
+            end = arr[n]
+        strlst.append("{}-{}".format(start, end) if end else "{}".format(start))
+        n += 1
+    string = ", ".join(strlst)
+    return string
+        
 
 def str2zmat(xyz_str: str, c_table: pd.DataFrame, start_index: int =1):
     """Gets cc.zmat from string
@@ -171,6 +189,54 @@ def slicestr(slc: Union[slice, list, tuple]):
         return "{}:{}:{}".format(start, stop, step)
     elif type(slc) in [list, tuple, np.array]:
         return str(list(slc))
+
+def running_avg(arr, res):
+    """
+    TODO docstring
+    """
+    return np.convolve(arr, np.ones(res)/res, mode="same")
+
+def ravg_edges(arr, res):
+    """
+    TODO docstring
+    """
+    ravg = running_avg(arr, res)
+    offset = res // 2
+    for o in range(offset):
+        ravg[o] = arr[:o+1].mean()
+    offset -= 0 if res%2 == 1 else 1
+    for o in range(1, offset+1):
+        ravg[-o] = arr[-o:].mean()
+    return ravg
+
+def slice_ravg(arr, left, right, res):
+    """
+    TODO docstring
+    """
+    offset = res // 2
+    start = left - offset
+    end = right + offset
+    ofs_left = offset
+    ofs_right = -offset
+    flag = False
+    if start < 0:
+        flag = True
+        start = 0
+        ofs_left = left
+    if start > arr.shape[0] - res:
+        start -= res
+        ofs_left += res
+    if end > arr.shape[0]:
+        flag = True
+        end = arr.shape[0]
+        ofs_right = right - end if end > right else None
+    if end < res:
+        end +=  res
+        ofs_right -= res
+    ravg = ravg_edges(arr[start:end], res) if flag else running_avg(arr[start:end], res)
+    slc = slice(ofs_left, ofs_right, None)
+    return ravg[slc]
+    
 
 def plot_2Ddistrib(data: Union[np.ndarray, list], index: list, var: Union[list, str, tuple] = "dihedral",
                    bins: int = 36, labels: list= [],  title: str = "",
@@ -351,6 +417,24 @@ def plot_time_evo(data: np.ndarray, index: Union[list,int], var: str = "dihedral
         ax.set_ylim(0, 180)
     return fig
 
+def grouplist_to_indexes(group_list: list, ic: bool = True, cart: bool = False, numbering: str = ""):
+    """
+    TODO docstring
+    """
+    if numbering:
+        if "ic" in numbering or "internal" in numbering:
+            ic = True
+        else: 
+            ic = False
+        if "cart" in numbering:
+            cart = True
+    if ic:
+        ic_list = list(it.chain.from_iterable([gr.arr for gr in group_list]))
+    if cart:
+        cart_list = list(it.chain.from_iterable([gr.cart for gr in group_list]))
+    to_return = (ic_list, cart_list) if ic and cart else ic_list if ic else cart_list
+    return to_return
+
 class Group:
     """
     Object for a set of variables, most commonly dihedrals, corresponding to the same chemical group.
@@ -447,6 +531,7 @@ class Group:
             whether present basins should be overwritten or not, default is False
         """
         if overwrite or not hasattr(self,"_basins"):
+            print("calculating basins with clustering")
             avg = cast(self.avg_id, py_object).value
             basins, centers = [], []
             for i in self.arr:
@@ -454,6 +539,41 @@ class Group:
                 basins.append(b), centers.append(c)
             self._basins, self._centers = basins, centers
             
+    def basins_from_time_domains(self, overwrite: bool = False, thresh_chunk: Union[int, float] = 25,
+                                 thresh_frame : Union[int, float] = 5, max_counter :  int = 3,
+                                 res_chunks: int = 15, res_ravg: int = 10,
+                                 recalculate: bool = False, thresh_centers: int = 4,
+                                 check_thresh: int = 10):
+        """
+        Note
+        ----
+        TODO        
+        Parameters
+        ----------
+        overwrite: bool
+            whether present basins should be overwritten or not, default is False
+        """
+        if overwrite or not hasattr(self,"_basins"):
+            print("calculating basins from time domains")
+            avg = cast(self.avg_id, py_object).value
+            domains = avg.get_time_domains(var=self.var, index=self.arr, thresh_chunk=thresh_chunk,
+                                           thresh_frame=thresh_frame, max_counter=max_counter,
+                                           res_chunks=res_chunks,  res_ravg=res_ravg, recalculate=recalculate)
+            bs, cs = avg.time_domains_to_basins(domains, var=self.var, thresh=thresh_centers,
+                                                check_thresh=check_thresh)
+            basins, centers = [bs[i] for i in self.arr], [cs[i] for i in self.arr]
+            self._basins, self._centers = basins, centers        
+    
+    def get_frames(self, basin: Union[int, str] = 1):
+        """
+        TODO docstring
+        """
+        if type(basin) in [int, np.int32, np.int64]:
+            return self.basins[self.selected][nthtolast(self.weights[self.selected], basin)]  
+        elif basin == "res":
+            self.select_res()
+            return self.basins[self.selected][mindidx(self.res)[1]]  # center with lowest residuals
+        
     @property
     def basins(self):
         """
@@ -464,6 +584,19 @@ class Group:
         """
         self.get_basins()
         return self._basins
+    
+    def set_basins(self, basins):
+        """
+        TODO docstring
+        """
+        self._basins = basins
+        avg = cast(self.avg_id, py_object).value
+        var_traj = getattr(avg, vdp[self.var]) if self.var in ["bond", "angle"] else getattr(avg, self.var)
+        centers = []
+        for n,i in enumerate(self.arr):
+            centers.append([var_traj[i][b].mean() for b in basins[n]])
+        self._centers = centers
+        print("set centers")
         
     @property
     def centers(self):
@@ -475,7 +608,7 @@ class Group:
         """
         self.get_basins()
         return self._centers
-        
+    
     @property
     def selected(self):
         """
@@ -765,7 +898,7 @@ class Group:
                 b = nthtolast(self.weights[self.selected], basin)
             else:
                 raise ValueError("unrecognised value for \"basin\": it must be an implemented method to select the basin")
-            self.frames_used_idx = (c.copy(self.selected), c.copy(b))  # dual index to get basin_frames. NB: Copy!
+            self.frames_used_idx = (cp.copy(self.selected), cp.copy(b))  # dual index to get basin_frames. NB: Copy!
             basin_frames = self.basins[self.selected][b]
             tosub = self.centers[self.selected][b]
             avg = cast(self.avg_id, py_object).value
@@ -803,6 +936,16 @@ def intersect_lists(ll: list):  # tested to be faster than other possible method
         intersec = intersec & set(l)
     return list(intersec)
 
+def get_frames(gr: Group, basin: Union[int, str] = 1):
+    """
+    TODO docstring
+    """
+    if type(basin) in [int, np.int32, np.int64]:
+        return gr.basins[gr.selected][nthtolast(gr.weights[gr.selected], basin)]  
+    elif basin == "res":
+        gr.select_res()
+        return gr.basins[gr.selected][mindidx(gr.res)[1]]  # center with lowest residuals
+        
 def intersect_groups(grouplist: list, basin: Union[int, str] = 1):  
     """
     Note
@@ -822,12 +965,12 @@ def intersect_groups(grouplist: list, basin: Union[int, str] = 1):
         The intersection of these basins (list of framenumbers)
     """
     if type(basin) in [int, np.int32, np.int64]:
-        get_frames = lambda gr: gr.basins[gr.selected][nthtolast(gr.weights[gr.selected], basin)]  
+        gt_frms = lambda gr: gr.basins[gr.selected][nthtolast(gr.weights[gr.selected], basin)]  
     elif basin == "res":
-        def get_frames(gr):
+        def gt_frms(gr):
             gr.select_res()
             return gr.basins[gr.selected][mindidx(gr.res)[1]]  # center with lowest residuals
-    ll = [get_frames(gr) for gr in grouplist]
+    ll = [gt_frms(gr) for gr in grouplist]
     return intersect_lists(ll)
 
 def agreement_lists(ll: list):
@@ -855,12 +998,12 @@ def agreement_groups(grouplist: list, basin: int = 1):
         the percentage of frames which appear in all selected basins
     """
     if type(basin) in [int, np.int32, np.int64]:
-        get_frames = lambda gr: gr.basins[gr.selected][nthtolast(gr.weights[gr.selected], basin)]  
+        gt_frms = lambda gr: gr.basins[gr.selected][nthtolast(gr.weights[gr.selected], basin)]  
     elif basin == "res":
-        def get_frames(gr):
+        def gt_frms(gr):
             gr.select_res
             return gr.centers[gr.selected][mindidx(gr.res)[1]]
-    ll = [get_frames(gr) for gr in grouplist]
+    ll = [gt_frms(gr) for gr in grouplist]
     return agreement_lists(ll)
 
 class Ic_averager:
@@ -885,7 +1028,7 @@ class Ic_averager:
         c_table: pd.DataFrame
             conversion table from cart1 to zmat1
         """
-        self.source = c.copy(source)
+        self.source = cp.copy(source)
         self.bonds = bonds.copy()
         self.angles = angles.copy()
         self.dih = dih.copy()
@@ -976,7 +1119,7 @@ class Ic_averager:
                     pseudo[f] = func(bonds=bonds, angles=angles, dih=dih)
                 setattr(self, coord, pseudo)
     
-    def get_displacement(self, var: str = "dih", index: Union[list, np.ndarray, int, str] = [], res: int = 1):
+    def get_displacement(self, var: str = "dih", index: Union[list, np.ndarray, int, str] = [], res: int = 15):
         """
         Parameters
         ----------
@@ -992,11 +1135,11 @@ class Ic_averager:
         self.var_d: dict
             dictionary of {idx: [array of the displacement] for idx in indexes}
         """
-        if not index:
+        if index in ([], np.array([])):
             raise ValueError("You must specify some angles! (in ic_numbering)")
         elif type(index) in [int, np.int32, np.int64]:
             index= [index]
-        elif index == "all":
+        elif index is "all":  # not == because on np.arrays
             index = np.arange(self.natoms)
         var = vds[var] if var in vds.keys() else var
         if "dih" in var:
@@ -1004,21 +1147,251 @@ class Ic_averager:
         else:
             indexes = [(var, index)]
         for j in indexes:
+#            if len(j) != 2:
+#                continue
             v, idx = j
             if not hasattr(self, "{}_d".format(v)):
                 setattr(self, "{}_d".format(v), {})
+            if not hasattr(self, "{}_s".format(v)):
+                setattr(self, "{}_s".format(v), {})
             orig = getattr(self, vdp[v]) if v in ["bond", "angle"] else getattr(self, v)
             d = {}
+            c = {}
             if res == 1:
                 for i in idx:
-                    d[i] = (orig[i][1:] -orig[i][:-1], 1)
+                    d[i] = (np.diff(orig[i]), 1)
             else:
                 for i in idx:
                     arr = np.zeros(int(orig[i].size/res))
                     for k in range(arr.size):
                         arr[k] += orig[i, int(k*res):int((k+1)*res)].mean()
-                    d[i] = (arr[1:] - arr[:-1], res)
+                    c[i] = arr
+                    d[i] = (np.diff(arr), res)
             getattr(self, "{}_d".format(v)).update(d)
+            getattr(self, "{}_s".format(v)).update(c)
+    
+    def displacement_analysis(self, var: str = "dih", index: Union[list, np.ndarray, int, str] = "all",
+                              thresh_chunk: Union[int, float] = 25, res_chunks: int = 15, recalculate: bool = False):
+        """
+        TODO: docstring
+        """
+        if index in ([], np.array([])):
+            raise ValueError("You must specify some indexes! (in ic_numbering)")
+        elif type(index) in [int, np.int32, np.int64]:
+            index= [index]
+        elif index is "all":  # not == because on np.arrays
+            index = np.arange(self.natoms)
+        var = vds[var] if var in vds.keys() else var
+        if "dih" in var:
+            indexes = [("dih_c", [i for i in index if i in self.use_c]), ("dih", [i for i in index if i not in self.use_c])]
+        else:
+            indexes = [(var, index)]
+        est_j = {}  # estimated jump positions
+        for z in indexes:
+            v, idx = z
+            if not idx:
+                continue
+            if recalculate or not hasattr(self, "{}_d".format(vds[v])):
+                self.get_displacement(var=v, index=idx, res=res_chunks)
+                displ_d = getattr(self, "{}_d".format(vds[v]))
+            else:
+                displ_d = getattr(self, "{}_d".format(vds[v]))
+                missing = [i for i in idx if i not in displ_d.keys()]
+                if missing:
+                    self.get_displacement(var=v, index=missing, res=res_chunks)
+            for i in idx:
+                displ, res = displ_d[i]
+                hits = np.where(abs(displ) > thresh_chunk)[0]
+                jumps =[]
+                last_present = True if displ.shape[0] - 1 in hits else False  # avoids indexing h+1 if that would cause IndexError
+                if last_present:
+                    hits = hits[:-1]
+                for h in hits:  # hits to jumps
+                    if h+1 in hits:
+                        if displ[h]*displ[h+1] < 0:  # big change of sign => two jumps!
+                           jumps.append(h) # add current (and will add next)
+                        continue  # if not big jump only add second hit
+                    if abs(displ[h+1]) < 0.9*thresh_chunk:
+                        jumps.append(h)  # simplest case
+                    elif displ[h]*displ[h+1] > 0:  # no big change of sign
+                        jumps.append(h+1)  # add only value next to hit
+                    else:
+                        jumps.extend([h, h+1])  # big change of sign, add hit and next value
+                if last_present:
+                    jumps.append(displ.shape[0] - 1)
+                est_j[i] = [(j+1)*res for j in jumps]
+        return est_j
+                
+    def get_ravg(self, var: str = "dih", index: Union[list, np.ndarray, int, str] = [],
+                 res: int = 15, fix_edges: bool = True):
+        if index in ([], np.array([])):
+            raise ValueError("You must specify some angles! (in ic_numbering)")
+        elif type(index) in [int, np.int32, np.int64]:
+            index= [index]
+        elif index is "all":  # not == because on np.arrays
+            index = np.arange(self.natoms)
+        var = vds[var] if var in vds.keys() else var
+        if "dih" in var:
+            indexes = [("dih_c", [i for i in index if i in self.use_c]), ("dih", [i for i in index if i not in self.use_c])]
+        else:
+            indexes = [(var, index)]
+        for j in indexes:
+#            if len(j) != 2:
+#                continue
+            v, idx = j
+            if not hasattr(self, "{}_m".format(v)):
+                setattr(self, "{}_m".format(v), {})
+            orig = getattr(self, vdp[v]) if v in ["bond", "angle"] else getattr(self, v)
+            d = {}
+            if res == 1:
+                for i in idx:
+                    d[i] = (orig, 1)
+            else:
+                for i in idx:
+                    ravg = ravg_edges(orig[i], res) if fix_edges else running_avg(orig[i], res)
+                    d[i] = (ravg, res)
+            getattr(self, "{}_m".format(v)).update(d)
+            
+    def get_time_domains(self, var: str = "dih", index: Union[list, np.ndarray, int, str] = [],
+                              thresh_chunk: Union[int, float] = 25, thresh_frame : Union[int, float] = 5,
+                              max_counter :  int = 3, res_chunks: int = 15, res_ravg: int = 10,
+                              recalculate: bool = False):
+        """
+        TODO: docstring
+        """
+        if index in ([], np.array([])):
+            raise ValueError("You must specify some indexes! (in ic_numbering)")
+        elif type(index) in [int, np.int32, np.int64]:
+            index= [index]
+        elif index is "all":  # not == because on np.arrays
+            index = np.arange(self.natoms)
+        var = vds[var] if var in vds.keys() else var
+        if "dih" in var:
+            indexes = [("dih_c", [i for i in index if i in self.use_c]), ("dih", [i for i in index if i not in self.use_c])]
+        else:
+            indexes = [(var, index)]
+        beginnings, ends = {}, {}
+        for z in indexes:
+            v, idx = z
+            if not idx:
+                continue
+            if recalculate or not hasattr(self, "{}_d".format(vds[v])):
+                self.get_displacement(var=v, index=idx, res=res_chunks)
+                displ_d = getattr(self, "{}_d".format(vds[v]))
+            else:
+                displ_d = getattr(self, "{}_d".format(vds[v]))
+                missing = [i for i in idx if i not in displ_d.keys()]
+                if missing:
+                    self.get_displacement(var=v, index=missing, res=res_chunks)
+            orig = getattr(self, vdp[v]) if v in ["bond", "angle"] else getattr(self, v)
+            for i in idx:
+                displ, res = displ_d[i]
+                if res < res_ravg:
+                    raise ValueError("cannot have res_ravg larger than the chunk resolution of your displacement")
+                hits = np.where(abs(displ) > thresh_chunk)[0]
+                jumps =[]
+                for h in hits:  # hits to jumps
+                    if h+1 in hits:
+                        if displ[h]*displ[h+1] < 0:  # big change of sign => two jumps!
+                           jumps.append(h) # add current (and will add next)
+                        continue  # if not big jump only add second hit
+                    if abs(displ[h+1]) < 0.9*thresh_chunk:
+                        jumps.append(h)  # simplest case
+                    elif displ[h]*displ[h+1] > 0:  # no big change of sign
+                        jumps.append(h+1)  # add only value next to hit
+                    else:
+                        jumps.extend([h, h+1])  # big change of sign, add hit and next value
+                beginnings[i], ends[i] = [], []
+                for j in jumps:
+                    left = j*res - 1  # +j from displ to chunk_mean, -j to avoid the jump, -1 for ravg_d
+                    right = (j+2)*res + 1  # +j from displ to chunk_mean, +j to avoid the jump, +1 for ravg_d
+                    left = left if left >= 0 else 0
+                    right = right if right <= self.nframes else self.nframes 
+                    ravg = slice_ravg(orig[i], left, right, res_ravg)  # same as running_average(orig[i])[left, right]
+                    ravg_d = np.diff(ravg)
+                    delims = [0, ravg_d.shape[0]-1]
+                    lims_list = [ends[i], beginnings[i]]
+                    incr = [1, -1]
+                    for n in range(2):
+                        cntr = 0
+                        delim = delims[n]
+                        lims= lims_list[n]
+                        cycles = 0
+                        while 0 <= delim < ravg_d.shape[0] if n == 0 else 0 < delim <= ravg_d.shape[0] :  # never go in infite negative items loop!
+                            cycles += 1
+                            condition = ravg_d[delim] > thresh_frame if displ[j] > 0 else ravg_d[delim] < -thresh_frame
+                            if not condition:
+                                cntr = 0
+                            if condition:
+                                cntr += 1
+                                if cntr == max_counter:
+                                    delim -= incr[n]*(max_counter-1)  # beginning of real descent/ascent (end flat region)
+                                    break
+                            delim += incr[n]
+                        lims.append(left + delim)
+        domains = {}
+        for i in beginnings.keys():
+            bs = [0] + beginnings[i]
+            es = ends[i] + [self.nframes]
+            edges = list(zip(bs, es))
+            domains[i] = [np.arange(*e) for e in edges] 
+        return domains
+    
+    def time_domains_to_basins(self,  domains: Union[dict, list], var: str = "dih",
+                               index: Union[list, np.ndarray, int, str] = [],
+                               thresh: int = 3, check_thresh: int = 10):
+        """
+        TODO:docstring
+        """
+        if index in ([], np.array([])):
+           if type(domains) == dict:
+               index = domains.keys()
+           else:
+               raise ValueError("You must specify some indexes! (in ic_numbering)")
+        elif type(index) in [int, np.int32, np.int64]:
+            index= [index]
+        elif index is "all":  # not == because on np.arrays
+            index = np.arange(self.natoms)
+        if type(domains) == list:
+            if len(index) == 1:
+                domains = {index[0]: domains}
+            else:
+                raise TypeError("provide domains as a dictionary of {i: domains_list} where i is in ic-numbering")
+        elif type(domains) != dict:
+            raise TypeError("provide domains as a dictionary of {i: domains_list} where i is in ic-numbering. Or, if len(i) == 1, provide domains_list")
+        var = vds[var] if var in vds.keys() else var
+        if "dih" in var:
+            indexes = [("dih_c", [i for i in index if i in self.use_c]), ("dih", [i for i in index if i not in self.use_c])]
+        else:
+            indexes = [(var, index)]
+        basins, centers = {}, {}
+        for z in indexes:
+            v, idx = z
+            orig = getattr(self, vdp[v]) if v in ["bond", "angle"] else getattr(self, v)
+            for i in idx:
+                dmncntrs = np.array([orig[i][domain].mean() for domain in domains[i]])
+                o = np.argsort(dmncntrs)
+                d = np.append(np.nan, np.diff(dmncntrs[o]))
+                mask = np.where(d < thresh)[0]
+                cntr = 0
+                within_l = []
+                while cntr < mask.shape[0]:
+                    start = cp.copy(mask[cntr]) - 1
+                    end = cp.copy(start) + 2
+                    while cntr + 1 < mask.shape[0] and mask[cntr+1] == mask[cntr] + 1:
+                        cntr += 1
+                        end += 1
+                    within_l.append(o[start:end])
+                    cntr += 1
+                if within_l:
+                    center_range = [dmncntrs[j].max()-dmncntrs[j].min() for j in within_l]
+                    if max(center_range) > check_thresh:
+                        raise BaseException("i = {}, range of domain centers in basin larger than check_thresh. cannot determine basins in this case".format(i))
+                flat = list(it.chain.from_iterable(within_l))
+                others = [j for j in o if j not in flat]
+                basins[i] = [np.concatenate([domains[i][j] for j in k]) for k in within_l] + [domains[i][j] for j in others]
+                centers[i] = [orig[i][b].mean() for b in basins[i]]
+        return basins, centers
             
     def __getitem__(self, key):
         """
@@ -1049,10 +1422,11 @@ class Ic_averager:
             builtin = ["bonds", "angles", "dih", "source", "avg_bond_angles",
                        "c_table", "zmat1", "zmat", "cart", "natoms", "nframes",
                        '_dih_c', '_dih_c_std', '_dih_std', '_use_c',
-                       "dih_mean", "dih_c_mean", "use_c"]
+                       "_dih_mean", "_dih_c_mean", "use_c"]
             pseudos = [i for i in self.__dict__.keys() if i not in builtin]
             pseudos = [i for i in pseudos if type(getattr(self,i)) == np.ndarray]  # only if arrays
             for pseu in pseudos:
+                print(pseu)
                 orig = getattr(self,pseu)
                 new = orig[list(key)] if type(key)== tuple else orig[key] if len(orig.shape) == 1 else orig[:,key]
                 setattr(sliced, pseu, new)
@@ -1072,7 +1446,7 @@ class Ic_averager:
     def copy(self):
         """Copies the Ic_averager        
         """
-        return c.copy(self)
+        return c.deepcopy(self)
     
     def cart_to_ic(self, arr: Union[int, list, tuple, np.array]):  # test combination with plotting
         """
@@ -1461,8 +1835,9 @@ class Ic_averager:
             label = list(self.c_table.index[index])
         return plot_2Ddistrib(data, index, var=var, bins=bins, title=title, pos_range=pos_range, label=label)
     
-    def plot_displacement(self, index: Union[list,int], var: str = "dihedral", title: str = "displacement",
-                          label: Union[list, str] = [], legend: bool = True, res: int = 5):
+    def plot_displacement(self, index: Union[list,int], var: str = "dihedral",
+                          title: str = "displacement", label: Union[list, str] = [],
+                          legend: bool = True, res: int = 15, recalculate: bool = False):
         """
         Parameters
         ----------
@@ -1479,6 +1854,7 @@ class Ic_averager:
         res: int
             resolution if some displacement needs to be calculated
         """
+        # TODO update docstring
         var = vds[var] if var in vds.keys() else var
         if type(index) in [int, np.int32, np.int64]:
             index = [index]
@@ -1499,14 +1875,15 @@ class Ic_averager:
             if len(j) != 3:
                 continue
             v, idx, labels = j
-            if hasattr(self, "{}_d".format(vds[v])):
+            if recalculate or not hasattr(self, "{}_d".format(vds[v])):
+                self.get_displacement(var=v, index=idx, res=res)
+                d = getattr(self, "{}_d".format(vds[v]))
+            else:
                 d = getattr(self, "{}_d".format(vds[v]))
                 missing = [i for i in idx if i not in d.keys()]
                 if missing:
                     self.get_displacement(var=v, index=missing, res=res)
-            else:
-                self.get_displacement(var=v, index=idx, res=res)
-                d = getattr(self, "{}_d".format(vds[v]))
+            
             for n,i in enumerate(idx):
                 ax.plot(d[i][1]*(1.5+np.arange(d[i][0].shape[0])), d[i][0], label=labels[n],  # d[i] = (disp_arr, res)
                         marker="o", markersize=1, markeredgecolor="k", linewidth=0.5, linestyle="--")
@@ -1517,10 +1894,9 @@ class Ic_averager:
         ax.set_title(title)
         return fig
 
-    def plot_time_evo_displacement(self, index: Union[list,int], var: str = "dihedral",
-                                   title: str = "", pos_range: Union[bool, type(None)] = None,
-                                   label: Union[list, str] = [], legend: bool = True,
-                                   res: int = 5):
+    def plot_ravg(self, index: Union[list,int], var: str = "dihedral",
+                          title: str = "displacement", label: Union[list, str] = [],
+                          legend: bool = True, res: int = 15, recalculate: bool = False):
         """
         Parameters
         ----------
@@ -1537,6 +1913,66 @@ class Ic_averager:
         res: int
             resolution if some displacement needs to be calculated
         """
+        # TODO update docstring
+        var = vds[var] if var in vds.keys() else var
+        if type(index) in [int, np.int32, np.int64]:
+            index = [index]
+        if not label:
+            label = [str(i) for i in list(self.c_table.index[index])]
+        elif type(label) in [str,int, np.int32, np.int64]:
+            label = [label]
+        if "dih" in var:
+            indexes = [
+                    ["dih_c", *list(zip(*[(i, label[n]) for n,i in enumerate(index) if i in self.use_c]))],
+                     ["dih", *list(zip(*[(i, label[n]) for n,i in enumerate(index) if i not in self.use_c]))]
+                     ]
+        else:
+            indexes = [[var, index, label]]
+        fig = plt.figure(figsize=(20, 10), dpi=150)
+        ax = fig.add_subplot(111)
+        for j in indexes:
+            if len(j) != 3:
+                continue
+            v, idx, labels = j
+            if recalculate or not hasattr(self, "{}_m".format(vds[v])):
+                self.get_ravg(var=v, index=idx, res=res)
+                d = getattr(self, "{}_m".format(vds[v]))
+            else:
+                d = getattr(self, "{}_m".format(vds[v]))
+                missing = [i for i in idx if i not in d.keys()]
+                if missing:
+                    self.get_ravg(var=v, index=missing, res=res)
+            for n,i in enumerate(idx):
+                ax.plot(d[i][1]*(1.5+np.arange(d[i][0].shape[0])), d[i][0], label=labels[n],  # d[i] = (disp_arr, res)
+                        marker="o", markersize=1, markeredgecolor="k", linewidth=0.5, linestyle="--")
+        ax.set_ylabel(var.replace("_","\_"))  
+        ax.set_xlabel("frame")
+        if legend:
+            ax.legend()
+        ax.set_title(title)
+        return fig
+    
+    def plot_time_evo_displacement(self, index: Union[list,int], var: str = "dihedral",
+                                   title: str = "", pos_range: Union[bool, type(None)] = None,
+                                   label: Union[list, str] = [], legend: bool = True,
+                                   res: int = 15, recalculate: bool = False):
+        """
+        Parameters
+        ----------
+        index: list/int
+            indexes to plot
+        var: str
+            the variable (bond, angle, dih, dih_c, some pseudo)
+        title: str
+            optional fig title
+        label: list/str
+            optional label for the different indexes plotted ()
+        legend: bool
+            whether the legend should appear or not
+        res: int
+            resolution if some displacement needs to be calculated
+        """
+        # TODO update docstring
         var = vdp[var] if var in vdp.keys() else var
         index = index if type(index) in [list, np.ndarray] else [index]  # make list if is not
         if var == "dih" and pos_range == None:
@@ -1561,16 +1997,16 @@ class Ic_averager:
             if len(j) != 3:
                 continue
             v, idx, labels = j
-            if hasattr(self, "{}_d".format(vds[v])):
+            if recalculate or not hasattr(self, "{}_d".format(vds[v])):
+                self.get_displacement(var=v, index=idx, res=res)
+                d = getattr(self, "{}_d".format(vds[v]))
+            else:
                 d = getattr(self, "{}_d".format(vds[v]))
                 missing = [i for i in idx if i not in d.keys()]
                 if missing:
                     self.get_displacement(var=v, index=missing, res=res)
-            else:
-                self.get_displacement(var=v, index=idx, res=res)
-                d = getattr(self, "{}_d".format(vds[v]))
             for n,i in enumerate(idx):
-                ax.plot(d[i][1]*(1.5+np.arange(d[i][0].shape[0])), d[i][0], label="{} displ".format(label[n]),
+                ax.plot(d[i][1]*(1.5+np.arange(d[i][0].shape[0])), d[i][0], label="{} displ".format(labels[n]),
                 marker="o", markersize=1, markeredgecolor="k", linewidth=0.5, linestyle="--")  # d[i] = (disp_arr, res)
         if var in ["dih", "dih_c", "angle"]:
             ax.set_ylim(-180, ax.get_ylim()[1])
@@ -1578,6 +2014,69 @@ class Ic_averager:
             ax.legend()
         return fig
     
+    def plot_time_evo_ravg(self, index: Union[list,int], var: str = "dihedral",
+                                   title: str = "", pos_range: Union[bool, type(None)] = None,
+                                   label: Union[list, str] = [], legend: bool = True,
+                                   res: int = 15, mode: str = "same", recalculate: bool = False):
+        """
+        Parameters
+        ----------
+        index: list/int
+            indexes to plot
+        var: str
+            the variable (bond, angle, dih, dih_c, some pseudo)
+        title: str
+            optional fig title
+        label: list/str
+            optional label for the different indexes plotted ()
+        legend: bool
+            whether the legend should appear or not
+        res: int
+            resolution if some displacement needs to be calculated
+        """
+        # TODO update docstring
+        var = vdp[var] if var in vdp.keys() else var
+        index = index if type(index) in [list, np.ndarray] else [index]  # make list if is not
+        if var == "dih" and pos_range == None:
+            pos_range = True if sum([1 if i in self.use_c else -1 for i in index])> 0 else False  # looks at all dihedrals
+            data = getattr(self, "dih_c" if pos_range else "dih")
+        else:
+            data = getattr(self, var)
+        if not label:
+            label = list(self.c_table.index[index])
+        elif type(label) in [str,int, np.int32, np.int64]:
+            label = [label]
+        fig = plot_time_evo(data, index, basins=False, var=var, title=title, pos_range=pos_range, label=label, legend=legend)
+        ax = fig.axes[0]
+        if "dih" in var:
+            indexes = [
+                    ["dih_c", *list(zip(*[(i, label[n]) for n,i in enumerate(index) if i in self.use_c]))],
+                     ["dih", *list(zip(*[(i, label[n]) for n,i in enumerate(index) if i not in self.use_c]))]
+                     ]
+        else:
+            indexes = [[var, index, label]]
+        for j in indexes:
+            if len(j) != 3:
+                continue
+            v, idx, labels = j
+            if recalculate or not hasattr(self, "{}_m".format(vds[v])):
+                self.get_ravg(var=v, index=idx, res=res)
+                d = getattr(self, "{}_m".format(vds[v]))
+            else:
+                d = getattr(self, "{}_m".format(vds[v]))
+                missing = [i for i in idx if i not in d.keys()]
+                if missing:
+                    self.get_ravg(var=v, index=missing, res=res, mode=mode)
+            for n,i in enumerate(idx):
+                ravg = d[i][0]
+                ax.plot(np.arange(ravg.shape[0]), ravg, label="{} ravg".format(labels[n]),
+                marker="o", markersize=1, markeredgecolor="k", linewidth=0.5, linestyle="--")  # d[i] = (disp_arr, res)
+        if var in ["dih", "dih_c", "angle"]:
+            ax.set_ylim(-180, ax.get_ylim()[1])
+        if legend:
+            ax.legend()
+        return fig
+
     def correct_quasilinears(self, method: str = "std"):
         """ Fixes wrong averaging for dihedrals around + or - 180.
     
@@ -1599,7 +2098,7 @@ class Ic_averager:
                 diff_std = self.dih_c_std - self.dih_std
                 self._use_c = np.where(diff_std < 0)[0]  # where it's better to use 0-360 range
                 
-    def std_analysis(self, var="dih", thresh_min: Union[float, int] = 90, thresh_max: Union[float, int] = 180, group_name: str = "rotate"):
+    def std_analysis(self, var="dih", thresh_min: Union[float, int] = 90, thresh_max: Union[float, int] = 180, group_name: Union[str,bool] = ""):
         """
         Note
         ----
@@ -1619,6 +2118,11 @@ class Ic_averager:
         ----
         self.[group_name]: list[Groups]
             list of detected Groups
+        
+        Returns
+        -------
+        list
+            group_list if group_name is an empty string or False
         """
         var = vdp[var] if var in vdp.keys() else var 
         if var == "dih":
@@ -1637,8 +2141,10 @@ class Ic_averager:
             group_list = np.arange(shift,self.natoms)[np.logical_and(getattr(self,var+"s").std(axis=1) > thresh_min, getattr(self,var+"s").std(axis=1) < thresh_max)]  # "bond"=> "bonds", "angle"=> "angles"
         else: # pseudo
             group_list = np.arange(shift,self.natoms)[np.logical_and(getattr(self,var).std(axis=1) > thresh_min, getattr(self,var).std(axis=1) < thresh_max)]
-            
-        setattr(self, group_name, group_list)
+        if group_name:    
+            setattr(self, group_name, group_list)
+        else:
+            return group_list
         print("Obtained {} with thresholds: [{},{}]".format(group_name, thresh_min, thresh_max))
         print("Resulting in groups:\n{}".format("\n".join([str(i) for i in group_list])))
     
@@ -1664,6 +2170,7 @@ class Ic_averager:
             basins (list of lists), centers(list)
         
         """
+        # TODO make indexes a list
         using_c = False
         if index == None:
             raise ValueError("You must specify \"index\".")
