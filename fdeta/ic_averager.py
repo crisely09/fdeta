@@ -920,7 +920,10 @@ class Group:
                     vals.append(tosub)
                 else:
                     if self.var == "dih":
-                        diff = (conv_d(avg.dih[self.arr[self.selected],:][basin_frames] - avg.dih[self.arr[n],:][basin_frames])).mean()
+                        diff = avg.dih[self.arr[self.selected],:][basin_frames] - avg.dih[self.arr[n],:][basin_frames]
+                        if diff.std() > conv_d(diff).std():  # 
+                            diff = conv_d(diff)
+                        diff = conv_d(diff.mean())
                         vals.append(conv_d(tosub - diff))
                     else:
                         vals.append(avg.dih[self.arr[n],:][basin_frames].mean())
