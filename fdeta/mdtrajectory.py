@@ -10,6 +10,7 @@ Base Class for trajectory analysis.
 
 import numpy as np
 from typing import Union
+from fdeta.fragment import Fragment, Ensemble
 from fdeta.kabsch import centroid, kabsch
 from fdeta.uelement import get_unique_elements, UElement
 from fdeta.traj_tools import default_charges, find_unique_elements, atom_to_mass
@@ -18,7 +19,7 @@ from fdeta.traj_tools import compute_center_of_mass
 from fdeta.units import BOHR
 
 
-def perform_kabsch(reference, current, masses, centered=False):
+def perform_kabsch(reference, current, centered=False):
     """Get translation matrix and rotation matrix from Kabsch algorithm.
     Finds the optimal rotation matrix to align two geometries that are
     centered on top of each other.
@@ -34,11 +35,11 @@ def perform_kabsch(reference, current, masses, centered=False):
         on top of each other (at the origin).
     """
     # Get translation vector to move to the origin
-    # ref_centroid = centroid(reference) 
-    ref_centroid = compute_center_of_mass(masses, reference)
+    ref_centroid = centroid(reference) 
+    # ref_centroid = compute_center_of_mass(masses, reference)
     if not centered:
-        # cur_centroid = centroid(current)
-        cur_centroid = compute_center_of_mass(masses, current)
+        cur_centroid = centroid(current)
+        # cur_centroid = compute_center_of_mass(masses, current)
         new_current = current - cur_centroid
         new_reference = reference - ref_centroid
         rot_matrix = kabsch(new_current, new_reference)
@@ -102,74 +103,46 @@ class MDTrajectory:
 
     Attributes
     ----------
-    elements : list(list(str))
-        List of elements per frame.
-    coordinates : list(np.ndarray)
-        List of coordinates per frame.
+    fragments : Fragment/Ensemble
+        Information of each fragment (atoms, coords, charges).
+        If instance of Ensemble it contains information
+        of more than one frame.
     unique_elements : dict(UElement)
         All the information of unique elements in the trajectory.
     grid_range : np.ndarray([xmin, xmax], [ymin, ymax], [zmin, zmax]).T
         3D Range in each axis.
     grid_bins :  tuple (Nx, Ny, Nz)
         Number of bins used in each axis for histograms.
-
     """
-    def __init__(self, elements, coordinates, charges, grid_range=None, grid_bins=None):
+    def __init__(self, frag0, frag1, aligned=True, grid_range=None, grid_bins=None):
         """
 
         Parameters
         ----------
-        elements : list or list of lists 
-            List/array of elements, multiple lists if different 
-            for each frame of the trajectory.
-        coordinates : 
-            Coordinates of each element for each frame.
-        charges : dict or list
-            Two options: 1) Charges of each unique element, or 2)list of 
-            charges per element element for each frame.
+        frag0 : Fragment
+            Information of fragment 0/A, atoms, coords and charges
+        frag1 :  Fragment/Ensemble
+            Information of fragment 1/B. Usually a collection of frames as
+            Ensemble instance.
         grid_range : np.array(([xmin, xmax], [ymin, ymax], [zmin, zmax])).T 
             Grid needed for making histograms.
         grid_bins : tuple(Nx, Ny, Nz)
             Number (integer) of bins to use on each axis.
         """
         # Standard checks
-        if not isinstance(coordinates, list):
-            if not isinstance(coordinates, np.ndarray):
-                raise TypeError('`coordinates` should be either a list or an numpy array.')
-        self.nframes = len(coordinates)
-        if not isinstance(elements, list):
-            if not isinstance(elements, np.ndarray):
-                raise TypeError("`elements` should be either a list or an numpy array.")
-        if not isinstance(coordinates[0], np.ndarray):
-            coords = []
-            addcoords = True
+        if not isinstance(frag0, Fragment):
+            raise TypeError('`frag0` must be an instance of Fragment class.')
+        if not isinstance(frag1, Ensemble):
+            if not isinstance(frag1, Fragment):
+                raise TypeError('`frag1` must be either an instance of Fragment or Ensemble classes.')
+            else:
+                self.nframes = 1
         else:
-            addcoords = False
-            self.coordinates = coordinates
-        if isinstance(elements[0], list):
-            if len(elements) != self.nframes:
-                raise ValueError('Number of frames of `elements` and `coordinates` do not match')
-            self.elements = elements
-            if addcoords:
-                for i in range(self.nframes):
-                    xyztmp = coordinates[i]
-                    coords.append(np.array(coordinates[i]))
-                    if coords[-1].shape[1] != 3:
-                        raise ValueError('Coordinates should be shape (Nelements, 3)')
-            self.coordinates = coords
-        else:
-            els = []
-            for i in range(self.nframes):
-                els.append(elements)
-                if addcoords:
-                    xyztmp = coordinates[i]
-                    if coordinates.shape[1] != 3:
-                        raise ValueError('Coordinates should be shape (Nelements, 3)')
-                    coords.append(np.array(coordinates[i]))
-            self.elements = els
-            self.coordinates = coords
-        self.unique_elements = get_unique_elements(self.elements, charges)
+            self.nframes = frag1.nframes
+        self.frag0 = frag0
+        self.frag1 = frag1
         # Set grid values for histogram
+        self.aligend = aligned
         self.grid_range = grid_range
         self.grid_bins = grid_bins
         self.pcf = None
@@ -194,37 +167,34 @@ class MDTrajectory:
         np.dot(geo, rot_matrix, out=geo)
         return geo
 
-#   def align_along_trajectory(self, frag_id: int, trajectory: dict = None,
-#                              to_file: bool = False):
-#       """ Aligns all structures in MD trajectory to the first one.
+    def align_along_trajectory(self, ref_atoms, ref_coords, path_info=None):
+        """ Aligns all structures in MD trajectory to the first one.
 
-#       Arguments
-#       ---------
-#       frag_id : int
-#           The unique number determining the molecule.
-#       trajectory : dictionary
-#           trajectory has the same structure as Trajectory.Topology.
+        Parameters
+        ----------
 
-#       """
-#       if trajectory is None:
-#           trajectory = self.trajectory
-#       alignment = {}
-#       errors = {}
-#       geos = {}
-#       # Given frag_id, the reference structure is taken from the first frame.
-#       reference = self.get_structure_from_trajectory(frag_id, 0, trajectory)
-#       for iframe in range(self.nframes):
-#           current = self.get_structure_from_trajectory(frag_id, iframe, trajectory)
-#           aligned, rmatrix, centroid, rmsd_error = self.align(current, reference)
-#           alignment[iframe] = [aligned, rmatrix, centroid]
-#           errors[iframe] = rmsd_error
-#           geos[iframe] = aligned
-#       self.aligned[frag_id] = alignment
-#       self.errors[frag_id] = errors
-#       if to_file:
-#           self.save_trajectory(frag_id, geometries=geos, fname='aligned')
-#       else:
-#           return alignment
+        """
+        if path_info is None:
+            # Assume it is in the same directory
+            path_info = os.getcwd()
+        rm_folder = os.path.join(path_info, 'rot_matrices')
+        cn_folder = os.path.join(path_info, 'geo_centers')
+        if not os.isdir(rm_folder)):
+            raise ValueError('Wrong folder path for rot_matrices')
+        if not os.isdir(cn_folder):
+            raise ValueError('Wrong folder path for geo_centers')
+        # Check reference information
+        if not (ref_atoms == frag0.atoms).all():
+            raise ValueError('Reference atoms must be in the same order as frag0.')
+        if not len(ref_coords) == len(frag0.coords):
+            raise ValueError('Wrong number of reference atoms/coordinates,  must be the same as frag0.')
+        ref_centroid = centroid(ref_coords)
+        for iframe in range(self.nframes):
+            ref_centroid, rot_matrix = perform_kabsch(ref_coords, frag1.fragments[iframe], centered=False)
+            ccent = centroid(frag1.fragments[iframe])
+            new_coords = np.dot(new_coords - ccent, rot_matrix)
+            ret_coords += ref_centroid
+
 
     def compute_pair_correlation_functions(self, grid_range=None, grid_bins=None):
         """ Given the method computes the pair correlation function (histogram)

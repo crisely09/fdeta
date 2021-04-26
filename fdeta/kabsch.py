@@ -8,7 +8,7 @@
 
 """
 
-import numpy
+import numpy as np
 import sys
 import re
 
@@ -22,7 +22,7 @@ def fit(P, Q):
     rmsd_best = kabsch(P, Q)
     while True:
         for i in range(3):
-            temp = numpy.zeros(3)
+            temp = np.zeros(3)
             temp[i] = step_size[i]
             rmsd_new = kabsch(P+temp, Q)
             if rmsd_new < rmsd_best:
@@ -70,7 +70,7 @@ def kabsch(P, Q, return_full=False):
     """
 
     # Computation of the covariance matrix
-    C = numpy.dot(numpy.transpose(P), Q)
+    C = np.dot(np.transpose(P), Q)
 
     # Computation of the optimal rotation matrix
     # This can be done using singular value decomposition (SVD)
@@ -79,18 +79,18 @@ def kabsch(P, Q, return_full=False):
     # right-handed coordinate system.
     # And finally calculating the optimal rotation matrix U
     # see http://en.wikipedia.org/wiki/Kabsch_algorithm
-    V, S, W = numpy.linalg.svd(C)
-    d = (numpy.linalg.det(V) * numpy.linalg.det(W)) < 0.0
+    V, S, W = np.linalg.svd(C)
+    d = (np.linalg.det(V) * np.linalg.det(W)) < 0.0
 
     if d:
         S[-1] = -S[-1]
         V[:, -1] = -V[:, -1]
 
     # Create Rotation matrix U
-    U = numpy.dot(V, W)
+    U = np.dot(V, W)
 
     # Rotate P
-    Pprime = numpy.dot(P, U)
+    Pprime = np.dot(P, U)
 
     if return_full:
         return Pprime, U, rmsd(Pprime, Q)
@@ -136,7 +136,7 @@ def rmsd(V, W):
     rmsd = 0.0
     for v, w in zip(V, W):
         rmsd += sum([(v[i]-w[i])**2.0 for i in range(D)])
-    return numpy.sqrt(rmsd/N)
+    return np.sqrt(rmsd/N)
 
 
 def write_coordinates(atoms, V):
@@ -188,7 +188,7 @@ def get_coordinates(filename):
 
         # The numbers are not valid unless we obtain exacly three
         if len(numbers) == 3:
-            V.append(numpy.array(numbers))
+            V.append(np.array(numbers))
             atoms.append(atom)
         else:
             exit("Reading the .xyz file failed in line {0}. Please check the format.".format(lines_read + 2))
@@ -196,7 +196,7 @@ def get_coordinates(filename):
         lines_read += 1
 
     f.close()
-    V = numpy.array(V)
+    V = np.array(V)
     return atoms, V
 
 

@@ -100,9 +100,9 @@ def test_read_xyz_trajectory():
     traj = os.path.join(dic, 'test_traj.fde')
     geos1 = read_xyz_trajectory(traj)
     geos2 = read_xyz_trajectory(traj, has_ids=True)
-    assert not flatten_list(geos1['elements'])
-    assert geos2['elements'][0] == ref_elements
-    assert np.allclose(geos2['geometries'][0][:3], ref_coords)
+    assert not flatten_list(geos1['atoms'])
+    assert geos2['atoms'][0] == ref_elements
+    assert np.allclose(geos2['coords'][0][:3], ref_coords)
     assert geos2['ids'][0][:10] == ['0']*10
 
 
@@ -134,8 +134,8 @@ def test_data_from_file():
     dic = os.getenv('FDETADATA')
     traj = os.path.join(dic, 'test_traj.fde')
     geos = data_from_file(traj)
-    assert geos['elements'][0] == ref_elements
-    assert np.allclose(geos['geometries'][0][:3], ref_coords)
+    assert geos['atoms'][0] == ref_elements
+    assert np.allclose(geos['coords'][0][:3], ref_coords)
     assert geos['ids'][0][:10] == ['0']*10
 
 
