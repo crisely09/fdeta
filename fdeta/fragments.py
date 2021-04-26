@@ -12,6 +12,332 @@ from fdeta.traj_tools import read_xyz_file, read_pqr_file, sort_human
 from fdeta.traj_tools import read_xyz_trajectory, read_pqr_trajectory
 
 
+def get_bond_matrix(elements, geos, unit='bohr'):
+    """Make a bond matrix from an array of geometries.
+
+    Parameters
+    ----------
+    geos : np.ndarray((N, 3))
+        Geometries of all atoms.
+
+    Returns
+    -------
+    bond_matrix : np.ndarray((NxN))
+        Bond matrix
+    """
+    if len(elements) != len(geos):
+        raise ValueError("Number of lements and geos don't match.")
+    if unit == 'angstrom':
+        geos /= BOHR
+    elif unit != 'bohr':
+        raise ValueError('`unit` can only be `bohr` or `angstrom`')
+    natoms = geos.shape[0]
+    bond_matrix = np.zeros((natoms, natoms), dtype=int)
+    for i in range(natoms):
+        for j in range(natoms):
+            if i != j:
+                d = np.linalg.norm(geos[i] - geos[j])
+                limit = qce.vdwradii.get(elements[i]) + qce.vdwradii.get(elements[j])
+                limit *= 0.7
+                if d < limit:
+                    bond_matrix[i, j] = 1
+    return bond_matrix
+
+
+def common_members(list0, list1):
+    """Find common elements between two lists.
+    
+    Parameters
+    ----------
+    lists0, list1 : list
+    Two list to compare.
+
+    Returns
+    -------
+    common : None or list
+        List of common elements.
+    """
+    set0 = set(list0)
+    set1 = set(list1)
+    common = list(set0 & set1)
+    return common
+
+
+def find_fragments(elements, geos, unit='bohr'):
+    """Find fragments by building a bond matrix
+    """
+    if len(elements) != len(geos):
+        raise ValueError("Number of elements and geos don't match.")
+    if unit == 'angstrom':
+        geos /= BOHR
+    elif unit != 'bohr':
+        raise ValueError('`unit` can only be `bohr` or `angstrom`')
+    bond_matrix = get_bond_matrix(elements, geos)
+    natoms = len(elements)
+    frag_list = []
+    frags = []
+    for iatom in range(natoms):
+        previous =  [item for sublist in frag_list for item in sublist]
+        nonzeros = np.where(bond_matrix[iatom] == 1)[0]
+        if nonzeros.any():
+            nonzeros = [iatom] + list(nonzeros)
+            common = common_members(previous, nonzeros)
+            if not common:
+                frag_list.append(nonzeros)
+                frags.append(geos[nonzeros])
+    return frag_list, frags
+
+
+def get_interfragment_distances(frag0, frag1):
+    """Get all the distances between the of two fragments
+
+    Parameters
+    ----------
+    frag0, frag1
+        Geometry arrays of each fragment.
+
+    Returns
+    -------
+    distances : list
+        All distances between the two fragments
+    """
+    distances = []
+    if len(frag0.shape) > 1:
+        for xyz0 in frag0:
+            if len(frag1.shape) > 1:
+                for xyz1 in frag1:
+                    distances.append(np.linalg.norm(xyz0 - xyz1))
+            else:
+                distances.append(np.linalg.norm(xyz0 - frag1))
+    else:
+        if len(frag1.shape) > 1:
+            for xyz1 in frag1:
+                distances.append(np.linalg.norm(frag0 - xyz1))
+        else:
+            distances.append(np.linalg.norm(frag0 - frag1))
+    return distances
+
+
+def box_for_molecule(mol_arr, margin=2.0):
+    """
+    Parameters
+    ----------
+    arr: np.ndarr(natoms, 3)
+        Geometry (object of filename).
+    margin: float or in
+        The margin from the extreme nuclei.
+    Returns
+    -------
+    array(3,2)
+        [[i.min,i.max] for i in x,y,z]
+    """
+    return np.array([mol_arr.min(axis=0)-margin, mol_arr.max(axis=0)+margin]).T
+
+
+def grid_from_box(box, dist=0.2, fix="box"):
+    """
+    Parameters
+    ----------
+    box: array(3,2)
+        [[i.min, i.max] for i in x,y,z] 
+    dist: int or float
+        distance between points
+    fix: str
+        "box" and some others keep box unchanged and slightly reduce the distance
+        "dist" and some others keep the distance unchanged and slightly increase the box size
+    Returns
+    -------
+    tuple(grid_shape, steps, origin)
+        Vector of number of points, Vector size matrix, origin
+    """
+    box_size = box.ptp(axis=1)
+    grid_shape = np.divide(box_size, dist)+1
+    from math import ceil
+    Np_vect = np.array([ceil(i) for i in Np_vect])
+    origin = box[:, 0]
+    if fix in ["box","extremes","margins"]:  # box is kept but the voxel is reduced slightly
+        steps = np.divide(box_size, grid_shape)
+        print("Your voxel now has size {},{},{}".format(*np.divide(box_size, grid_shape)))
+    if fix in ["dist", "distance", "voxel", "vect", "vector", "maxdist", "max_dist"]:
+        steps = 3*[dist]
+        box[:, 1] = box[:, 0] + dist * grid_shape
+        print("Your box has been changed to: ({},{}),({},{}),({},{})".format(*box.reshape(-1)))
+    return (grid_shape, steps, origin)
+
+
+def _core_align(ref_geo, ref_center, work_geo, work_center):
+    """The main operation for aligning.
+
+    Note
+    ----
+    The aligning is done at the origin, that is why the centers are required.
+    Sometimes things are aligned to the geometric center of another molecule/fragment.
+
+    Parameters
+    ----------
+    ref_geo : np.ndarray((Natoms, 3))
+        Cartesian coordinates of the geometry used as reference.
+    work_geo : np.ndarray((Natoms, 3))
+        Cartesian coordinates of the geometry to be aligned.
+    """
+
+    work_geo = np.dot(work_geo - work_center, rot_matrix)
+    work_geo += ref_center
+    if return_mat:
+        return work_geo, rot_matrix
+    else:
+        return work_geo
+
+
+def align_frames(geos_ensemble, ref_frag=None, mat_path=None, save_matrices=False):
+    """Align all the geometries to a reference structure.
+
+    Parameters
+    ----------
+    geos_ensemble : dict/Ensemble
+        Collection of frames with atoms, coordinates (and charges) of a fragment.
+    ref_frag : dict/Fragment
+        Information of the reference fragment used for the aligning.
+    save_matrices :  bool
+        Weather to save the `rot_matrices` and the `centers` to files.
+    mat_path : str
+        Path where to save the matrices when `save_matrices` is set to True.
+    """
+    # check basics
+    if ref_frag is None:
+        if mat_path is None:
+            raise ValueError("""Please provide either a reference fragment or a path to """
+                             """rotation matrices and centers of geometry.""")
+        else:
+            _align_from_matrices(geos_ensemble, mat_math)
+    else:
+        _align_from_scratch(geos_ensemple, ref_frag, mat_path=math_path,
+                                   save_matrices=save_matrices)
+
+
+def _align_from_scratch(geos_ensemble, ref_frag, save_matrices=False, mat_path=None):
+    """Align a set of geometries comparing to a reference geometry.
+
+    Parameters
+    ----------
+    geos_ensemble : dict/Ensemble
+        Collection of frames with atoms, coordinates (and charges) of a fragment.
+    ref_frag : dict/Fragment
+        Information of the reference fragment used for the aligning.
+    save_matrices :  bool
+        Weather to save the `rot_matrices` and the `centers` to files.
+    mat_path : str
+        Path where to save the matrices when `save_matrices` is set to True.
+    """
+    # Check geos_ensemble types
+    if isinstance(geos_ensemble, Ensemble):
+        is_ensemble = True
+        latoms = list()
+        lcoords = list()
+        for iframe in range(geos_ensemble.nframes):
+            ifrag = geos_ensemble.fragments[iframe]
+            latoms.append(ifrag.atoms)
+            lcoords.append(ifrag.coords)
+    elif isinstance(geos_ensemble, dict):
+        is_ensemble = False
+        latoms = geos_ensemble['atoms']
+        lcoords = geos_ensemble['coords']
+    else:
+        raise TypeError("""Geometries to be aligned must be given either as a dict(atoms, geos)"""
+                        """ or as an instance of the Ensemble object.""")
+    # Check ref_frag types
+    if isinstance(ref_frag, Fragment):
+        ref_atoms = ref_frag.atoms
+        ref_geo = ref_frag.coords
+    elif isinstance(ref_frag, dict):
+        ref_atoms = ref_frag['atoms']
+        ref_coords = ref_frag['coords']
+    # Loop over frames
+    nframes = len(latoms)
+    if nframes != len(lcoords):
+        raise ValueError('Number of atoms and coordinates does not match.')
+    for iframe in range(nframes):
+        # Check with respect to the ref_fragment
+        if not (ref_atoms == latoms[iframe]).all()
+            raise ValueError('Atoms of frame %d do not correspond to the reference geometry' % iframe)
+        work_geo = lcoords[iframe]
+        ref_center, rot_matrix = perform_kabsch(ref_geo, work_geo, centered=False)
+        work_center = centroid(work_geo)
+        new_geo = _core_align(ref_geo, ref_center, work_geo, work_center)
+        # Save matrices
+        if save_matrices:
+            if mat_path is None:
+                mat_path = os.getcwd()
+            rot_path = os.path.join(mat_path, 'rot_matrices')
+            cen_path = os.path.join(mat_path, 'centers')
+            if not os.isdir(rot_path)
+                os.mkdir(rot_path)
+            if not os.isdir(cen_path)
+                os.mkdir(cen_path)
+            np.savetxt(os.path.join(rot_path, 'rot_matrix_%d.txt' % iframe), rot_matrix)
+            np.savetxt(os.path.join(cen_path, 'ref_center_%d.txt' % iframe), ref_center)
+            np.savetxt(os.path.join(cen_path, 'work_center_%d.txt' % iframe), work_center)
+        # Replace values
+        if not is_ensemble:
+            geos_ensemble['coords'][iframe][:] = new_geo.copy()
+        else:
+            geos_ensemble.frag[iframe].coords[:] = new_geo.copy()
+
+
+def _align_from_matrices(geos_ensemble, mat_path):
+    """
+    Parameters
+    ----------
+    geos_ensemble : dict/Ensemble
+        Collection of frames with atoms, coordinates (and charges) of a fragment.
+    mat_path : str
+        Path where to save the matrices when `save_matrices` is set to True.
+    """
+    # Check path
+    if mat_path is None:
+        mat_path = os.get_cwd()
+    rot_path = os.path.join(mat_path, 'rot_matrices')
+    cen_path = os.path.join(mat_path, 'centers')
+    if not os.isdir(rot_path)
+        raise ValueError('Missing `rot_matrices` folder')
+    if not os.isdir(cen_path)
+        raise ValueError('Missing `centers` folder')
+    # Check geos_ensemble types
+    if isinstance(geos_ensemble, Ensemble):
+        is_ensemble = True
+        latoms = list()
+        lcoords = list()
+        for iframe in range(geos_ensemble.nframes):
+            ifrag = geos_ensemble.fragments[iframe]
+            latoms.append(ifrag.atoms)
+            lcoords.append(ifrag.coords)
+    elif isinstance(geos_ensemble, dict):
+        is_ensemble = False
+        latoms = geos_ensemble['atoms']
+        lcoords = geos_ensemble['coords']
+    else:
+        raise TypeError("""Geometries to be aligned must be given either as a dict(atoms, geos)"""
+                        """ or as an instance of the Ensemble object.""")
+    # Loop over frames
+    nframes = len(latoms)
+    if nframes != len(lcoords):
+        raise ValueError('Number of atoms and coordinates does not match.')
+    for iframe in range(nframes):
+        # Check with respect to the ref_fragment
+        if not (ref_atoms == latoms[iframe]).all()
+            raise ValueError('Atoms of frame %d do not correspond to the reference geometry' % iframe)
+        # Read matrices
+        rot_matrix = np.loadtxt(os.path.join(rot_path, 'rot_matrix_%d.txt' % iframe))
+        ref_center = np.loadtxt(os.path.join(cen_path, 'ref_center_%d.txt' % iframe))
+        work_center = np.loadtxt(os.path.join(cen_path, 'work_center_%d.txt' % iframe))
+        new_geo = _core_align(ref_geo, ref_center, work_geo, work_center)
+        # Replace values
+        if not is_ensemble:
+            geos_ensemble['coords'][iframe][:] = new_geo.copy()
+        else:
+            geos_ensemble.frag[iframe].coords[:] = new_geo.copy()
+
+
 class Fragment():
     """
     Class to allocate information of a fragment.
@@ -176,109 +502,3 @@ class Ensemble():
             info = read_xyz_trajectory(lfiles)
             info['charges'] = None
         return cls(info['atoms'], info['coords'], info['charges'])
-
-
-def get_bond_matrix(elements, geos, unit='bohr'):
-    """Make a bond matrix from an array of geometries.
-
-    Parameters
-    ----------
-    geos : np.ndarray((N, 3))
-        Geometries of all atoms.
-
-    Returns
-    -------
-    bond_matrix : np.ndarray((NxN))
-        Bond matrix
-    """
-    if len(elements) != len(geos):
-        raise ValueError("Number of lements and geos don't match.")
-    if unit == 'angstrom':
-        geos /= BOHR
-    elif unit != 'bohr':
-        raise ValueError('`unit` can only be `bohr` or `angstrom`')
-    natoms = geos.shape[0]
-    bond_matrix = np.zeros((natoms, natoms), dtype=int)
-    for i in range(natoms):
-        for j in range(natoms):
-            if i != j:
-                d = np.linalg.norm(geos[i] - geos[j])
-                limit = qce.vdwradii.get(elements[i]) + qce.vdwradii.get(elements[j])
-                limit *= 0.7
-                if d < limit:
-                    bond_matrix[i, j] = 1
-    return bond_matrix
-
-
-def common_members(list0, list1):
-    """Find common elements between two lists.
-    
-    Parameters
-    ----------
-    lists0, list1 : list
-    Two list to compare.
-
-    Returns
-    -------
-    common : None or list
-        List of common elements.
-    """
-    set0 = set(list0)
-    set1 = set(list1)
-    common = list(set0 & set1)
-    return common
-
-
-def find_fragments(elements, geos, unit='bohr'):
-    """Find fragments by building a bond matrix
-    """
-    if len(elements) != len(geos):
-        raise ValueError("Number of elements and geos don't match.")
-    if unit == 'angstrom':
-        geos /= BOHR
-    elif unit != 'bohr':
-        raise ValueError('`unit` can only be `bohr` or `angstrom`')
-    bond_matrix = get_bond_matrix(elements, geos)
-    natoms = len(elements)
-    frag_list = []
-    frags = []
-    for iatom in range(natoms):
-        previous =  [item for sublist in frag_list for item in sublist]
-        nonzeros = np.where(bond_matrix[iatom] == 1)[0]
-        if nonzeros.any():
-            nonzeros = [iatom] + list(nonzeros)
-            common = common_members(previous, nonzeros)
-            if not common:
-                frag_list.append(nonzeros)
-                frags.append(geos[nonzeros])
-    return frag_list, frags
-
-
-def get_interfragment_distances(frag0, frag1):
-    """Get all the distances between the of two fragments
-
-    Parameters
-    ----------
-    frag0, frag1
-        Geometry arrays of each fragment.
-
-    Returns
-    -------
-    distances : list
-        All distances between the two fragments
-    """
-    distances = []
-    if len(frag0.shape) > 1:
-        for xyz0 in frag0:
-            if len(frag1.shape) > 1:
-                for xyz1 in frag1:
-                    distances.append(np.linalg.norm(xyz0 - xyz1))
-            else:
-                distances.append(np.linalg.norm(xyz0 - frag1))
-    else:
-        if len(frag1.shape) > 1:
-            for xyz1 in frag1:
-                distances.append(np.linalg.norm(frag0 - xyz1))
-        else:
-            distances.append(np.linalg.norm(frag0 - frag1))
-    return distances
