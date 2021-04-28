@@ -8,6 +8,7 @@ Tools for Fragment/Molecule handling.
 import os
 import numpy as np
 import qcelemental as qce
+from fdeta.kabsch import perform_kabsch, centroid
 from fdeta.traj_tools import read_xyz_file, read_pqr_file, sort_human
 from fdeta.traj_tools import read_xyz_trajectory, read_pqr_trajectory
 
@@ -118,7 +119,7 @@ def get_interfragment_distances(frag0, frag1):
     return distances
 
 
-def _core_align(ref_geo, ref_center, work_geo, work_center):
+def _core_align(rot_matrix, ref_center, work_geo, work_center, return_mat=False):
     """The main operation for aligning.
 
     Note
@@ -140,32 +141,6 @@ def _core_align(ref_geo, ref_center, work_geo, work_center):
         return work_geo, rot_matrix
     else:
         return work_geo
-
-
-def align_frames(geos_ensemble, ref_frag=None, mat_path=None, save_matrices=False):
-    """Align all the geometries to a reference structure.
-
-    Parameters
-    ----------
-    geos_ensemble : dict/Ensemble
-        Collection of frames with atoms, coordinates (and charges) of a fragment.
-    ref_frag : dict/Fragment
-        Information of the reference fragment used for the aligning.
-    save_matrices :  bool
-        Weather to save the `rot_matrices` and the `centers` to files.
-    mat_path : str
-        Path where to save the matrices when `save_matrices` is set to True.
-    """
-    # check basics
-    if ref_frag is None:
-        if mat_path is None:
-            raise ValueError("""Please provide either a reference fragment or a path to """
-                             """rotation matrices and centers of geometry.""")
-        else:
-            _align_from_matrices(geos_ensemble, mat_math)
-    else:
-        _align_from_scratch(geos_ensemple, ref_frag, mat_path=math_path,
-                                   save_matrices=save_matrices)
 
 
 def _align_from_scratch(geos_ensemble, ref_frag, save_matrices=False, mat_path=None):
@@ -204,32 +179,33 @@ def _align_from_scratch(geos_ensemble, ref_frag, save_matrices=False, mat_path=N
         ref_geo = ref_frag.coords
     elif isinstance(ref_frag, dict):
         ref_atoms = ref_frag['atoms']
-        ref_coords = ref_frag['coords']
+        ref_geo = ref_frag['coords']
+        if isinstance(ref_geo, list):
+            tmp = np.array(ref_geo)
+            if tmp.shape[1] != 3:
+                raise ValueError('Expecting one single geometry, with shape (natoms, 3).')
     # Loop over frames
     nframes = len(latoms)
     if nframes != len(lcoords):
         raise ValueError('Number of atoms and coordinates does not match.')
     for iframe in range(nframes):
         # Check with respect to the ref_fragment
-        if not (ref_atoms == latoms[iframe]).all():
+        if not (ref_atoms == latoms[iframe]):
             raise ValueError('Atoms of frame %d do not correspond to the reference geometry' % iframe)
         work_geo = lcoords[iframe]
         ref_center, rot_matrix = perform_kabsch(ref_geo, work_geo, centered=False)
         work_center = centroid(work_geo)
-        new_geo = _core_align(ref_geo, ref_center, work_geo, work_center)
+        new_geo = _core_align(rot_matrix, ref_center, work_geo, work_center)
         # Save matrices
         if save_matrices:
             if mat_path is None:
                 mat_path = os.getcwd()
             rot_path = os.path.join(mat_path, 'rot_matrices')
-            cen_path = os.path.join(mat_path, 'centers')
             if not os.path.isdir(rot_path):
                 os.mkdir(rot_path)
-            if not os.path.isdir(cen_path):
-                os.mkdir(cen_path)
+            if iframe == 0:
+                np.savetxt(os.path.join(mat_path, 'ref_center.txt'), ref_center)
             np.savetxt(os.path.join(rot_path, 'rot_matrix_%d.txt' % iframe), rot_matrix)
-            np.savetxt(os.path.join(cen_path, 'ref_center_%d.txt' % iframe), ref_center)
-            np.savetxt(os.path.join(cen_path, 'work_center_%d.txt' % iframe), work_center)
         # Replace values
         if not is_ensemble:
             geos_ensemble['coords'][iframe][:] = new_geo.copy()
@@ -237,7 +213,7 @@ def _align_from_scratch(geos_ensemble, ref_frag, save_matrices=False, mat_path=N
             geos_ensemble.frag[iframe].coords[:] = new_geo.copy()
 
 
-def _align_from_matrices(geos_ensemble, mat_path):
+def _align_from_matrices(geos_ensemble, mat_path=None):
     """
     Parameters
     ----------
@@ -248,13 +224,10 @@ def _align_from_matrices(geos_ensemble, mat_path):
     """
     # Check path
     if mat_path is None:
-        mat_path = os.get_cwd()
+        mat_path = os.getcwd()
     rot_path = os.path.join(mat_path, 'rot_matrices')
-    cen_path = os.path.join(mat_path, 'centers')
     if not os.path.isdir(rot_path):
         raise ValueError('Missing `rot_matrices` folder')
-    if not os.path.isdir(cen_path):
-        raise ValueError('Missing `centers` folder')
     # Check geos_ensemble types
     if isinstance(geos_ensemble, Ensemble):
         is_ensemble = True
@@ -275,20 +248,44 @@ def _align_from_matrices(geos_ensemble, mat_path):
     nframes = len(latoms)
     if nframes != len(lcoords):
         raise ValueError('Number of atoms and coordinates does not match.')
+    ref_center = np.loadtxt(os.path.join(mat_path, 'ref_center.txt'))
     for iframe in range(nframes):
-        # Check with respect to the ref_fragment
-        if not (ref_atoms == latoms[iframe]).all():
-            raise ValueError('Atoms of frame %d do not correspond to the reference geometry' % iframe)
         # Read matrices
+        work_geo = lcoords[iframe]
+        work_center = centroid(work_geo)
         rot_matrix = np.loadtxt(os.path.join(rot_path, 'rot_matrix_%d.txt' % iframe))
-        ref_center = np.loadtxt(os.path.join(cen_path, 'ref_center_%d.txt' % iframe))
-        work_center = np.loadtxt(os.path.join(cen_path, 'work_center_%d.txt' % iframe))
-        new_geo = _core_align(ref_geo, ref_center, work_geo, work_center)
+        new_geo = _core_align(rot_matrix, ref_center, work_geo, work_center)
         # Replace values
         if not is_ensemble:
             geos_ensemble['coords'][iframe][:] = new_geo.copy()
         else:
             geos_ensemble.frag[iframe].coords[:] = new_geo.copy()
+
+
+def align_frames(geos_ensemble, ref_frag=None, mat_path=None, save_matrices=False):
+    """Align all the geometries to a reference structure.
+
+    Parameters
+    ----------
+    geos_ensemble : dict/Ensemble
+        Collection of frames with atoms, coordinates (and charges) of a fragment.
+    ref_frag : dict/Fragment
+        Information of the reference fragment used for the aligning.
+    save_matrices :  bool
+        Weather to save the `rot_matrices` and the `centers` to files.
+    mat_path : str
+        Path where to save the matrices when `save_matrices` is set to True.
+    """
+    # check basics
+    if ref_frag is None:
+        if mat_path is None:
+            raise ValueError("""Please provide either a reference fragment or a path to """
+                             """rotation matrices and centers of geometry.""")
+        else:
+            _align_from_matrices(geos_ensemble, mat_math)
+    else:
+        _align_from_scratch(geos_ensemble, ref_frag, mat_path=mat_path,
+                                   save_matrices=save_matrices)
 
 
 class Fragment():
