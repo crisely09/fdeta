@@ -266,3 +266,32 @@ The script will return three RMSD values;
         print("Normal RMSD:", normal_rmsd)
         print("Kabsch RMSD:", kabsch(P, Q))
         print("Fitted RMSD:", fit(P, Q))
+
+
+def perform_kabsch(reference, current, centered=False):
+    """Get translation matrix and rotation matrix from Kabsch algorithm.
+    Finds the optimal rotation matrix to align two geometries that are
+    centered on top of each other.
+
+    Parameters
+    ----------
+    reference : np.array
+        Reference geometry to which to align.
+    current : np.array
+        Current working geometry to be aligned.
+    centered : bool
+        Whether or the two geometries are already centered
+        on top of each other (at the origin).
+    """
+    # Get translation vector to move to the origin
+    ref_centroid = centroid(reference) 
+    # ref_centroid = compute_center_of_mass(masses, reference)
+    if not centered:
+        cur_centroid = centroid(current)
+        # cur_centroid = compute_center_of_mass(masses, current)
+        new_current = current - cur_centroid
+        new_reference = reference - ref_centroid
+        rot_matrix = kabsch(new_current, new_reference)
+    else:
+        rot_matrix = kabsch(current, reference)
+    return ref_centroid, rot_matrix

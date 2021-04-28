@@ -167,10 +167,26 @@ def make_cubic_grid(grid_shape: tuple, vectors: np.ndarray,
             else:
                 vector = np.arange(beg, end-size, size)
         axis.append(vector)
+    return make_cube_from_points(axis)
 
+
+def make_cube_from_points(points):
+    """From the points in each direction make cubic grid.
+
+    Parameters
+    ----------
+    points : np.ndarray
+        Points on each direction that make the grid
+
+    Returns
+    -------
+    grid3d :  np.ndarray((npoints, 3))
+        Final 3D grid with npoints = N1*N2*N3
+        where Ns are defined by the grid_shape.
+    """
     # This swap of x and y is needed because of the z, y, x
     # evolution of cubic grids
-    xv, yv, zv = np.meshgrid(axis[1], axis[0], axis[2])
+    xv, yv, zv = np.meshgrid(points[1], points[0], points[2])
     xv = xv.reshape((xv.size,))
     yv = yv.reshape((yv.size,))
     zv = zv.reshape((zv.size,))
@@ -257,6 +273,80 @@ def make_supercube(blims, atoms, geometries):
                 new_geometries[acount:fin, 1] += signs[axis1]*sizes[axis1]
                 new_geometries[acount:fin, 2] += signs[axis2]*sizes[axis2]
     return new_atoms, new_geometries
+
+
+def expand_grid_information(values_hist):
+    """Return the expanded values on each grid point.
+
+    Note
+    ----
+    Used with array/tuple from np.histogramdd.
+
+    Parameters
+    ----------
+    values_hist
+    """
+    vshape = values_hist.shape
+    nx = vshape[0]
+    ny = vshape[1]
+    nz = vshape[2]
+    result = np.zeros(nx*ny*nz)
+    values = values_hist.flatten()
+    count = 0
+    for x in range(nx):
+        for y in range(ny):
+            for z in range(nz):
+                fcount = z + y*ny + x*ny*nz
+                result[count] = values[fcount]
+                count += 1
+    return result
+
+
+def box_for_molecule(mol_arr, margin=2.0):
+    """
+    Parameters
+    ----------
+    arr: np.ndarr(natoms, 3)
+        Geometry (object of filename).
+    margin: float or in
+        The margin from the extreme nuclei.
+    Returns
+    -------
+    array(3,2)
+        [[i.min,i.max] for i in x,y,z]
+    """
+    return np.array([mol_arr.min(axis=0)-margin, mol_arr.max(axis=0)+margin]).T
+
+
+def grid_from_box(box, dist=0.2, fix="box"):
+    """
+    Parameters
+    ----------
+    box: array(3,2)
+        [[i.min, i.max] for i in x,y,z] 
+    dist: int or float
+        distance between points
+    fix: str
+        "box" and some others keep box unchanged and slightly reduce the distance
+        "dist" and some others keep the distance unchanged and slightly increase the box size
+    Returns
+    -------
+    tuple(grid_shape, steps, origin)
+        Vector of number of points, Vector size matrix, origin
+    """
+    box_size = box.ptp(axis=1)
+    grid_shape = np.divide(box_size, dist)+1
+    from math import ceil
+    grid_shape = np.array([ceil(i) for i in grid_shape])
+    origin = box[:, 0]
+    if fix in ["box","extremes","margins"]:  # box is kept but the voxel is reduced slightly
+        steps = np.divide(box_size, grid_shape)
+        print("Your voxel now has size {},{},{}".format(*np.divide(box_size, grid_shape)))
+    if fix in ["dist", "distance", "voxel", "vect", "vector", "maxdist", "max_dist"]:
+        steps = 3*[dist]
+        box[:, 1] = box[:, 0] + dist * grid_shape
+        print("Your box has been changed to: ({},{}),({},{}),({},{})".format(*box.reshape(-1)))
+    return (grid_shape, steps, origin)
 
 
 def cut_cube_geometries(limits, atoms, geometries, natoms=None,

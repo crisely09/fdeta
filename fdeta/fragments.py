@@ -118,53 +118,6 @@ def get_interfragment_distances(frag0, frag1):
     return distances
 
 
-def box_for_molecule(mol_arr, margin=2.0):
-    """
-    Parameters
-    ----------
-    arr: np.ndarr(natoms, 3)
-        Geometry (object of filename).
-    margin: float or in
-        The margin from the extreme nuclei.
-    Returns
-    -------
-    array(3,2)
-        [[i.min,i.max] for i in x,y,z]
-    """
-    return np.array([mol_arr.min(axis=0)-margin, mol_arr.max(axis=0)+margin]).T
-
-
-def grid_from_box(box, dist=0.2, fix="box"):
-    """
-    Parameters
-    ----------
-    box: array(3,2)
-        [[i.min, i.max] for i in x,y,z] 
-    dist: int or float
-        distance between points
-    fix: str
-        "box" and some others keep box unchanged and slightly reduce the distance
-        "dist" and some others keep the distance unchanged and slightly increase the box size
-    Returns
-    -------
-    tuple(grid_shape, steps, origin)
-        Vector of number of points, Vector size matrix, origin
-    """
-    box_size = box.ptp(axis=1)
-    grid_shape = np.divide(box_size, dist)+1
-    from math import ceil
-    Np_vect = np.array([ceil(i) for i in Np_vect])
-    origin = box[:, 0]
-    if fix in ["box","extremes","margins"]:  # box is kept but the voxel is reduced slightly
-        steps = np.divide(box_size, grid_shape)
-        print("Your voxel now has size {},{},{}".format(*np.divide(box_size, grid_shape)))
-    if fix in ["dist", "distance", "voxel", "vect", "vector", "maxdist", "max_dist"]:
-        steps = 3*[dist]
-        box[:, 1] = box[:, 0] + dist * grid_shape
-        print("Your box has been changed to: ({},{}),({},{}),({},{})".format(*box.reshape(-1)))
-    return (grid_shape, steps, origin)
-
-
 def _core_align(ref_geo, ref_center, work_geo, work_center):
     """The main operation for aligning.
 
@@ -258,7 +211,7 @@ def _align_from_scratch(geos_ensemble, ref_frag, save_matrices=False, mat_path=N
         raise ValueError('Number of atoms and coordinates does not match.')
     for iframe in range(nframes):
         # Check with respect to the ref_fragment
-        if not (ref_atoms == latoms[iframe]).all()
+        if not (ref_atoms == latoms[iframe]).all():
             raise ValueError('Atoms of frame %d do not correspond to the reference geometry' % iframe)
         work_geo = lcoords[iframe]
         ref_center, rot_matrix = perform_kabsch(ref_geo, work_geo, centered=False)
@@ -270,9 +223,9 @@ def _align_from_scratch(geos_ensemble, ref_frag, save_matrices=False, mat_path=N
                 mat_path = os.getcwd()
             rot_path = os.path.join(mat_path, 'rot_matrices')
             cen_path = os.path.join(mat_path, 'centers')
-            if not os.isdir(rot_path)
+            if not os.path.isdir(rot_path):
                 os.mkdir(rot_path)
-            if not os.isdir(cen_path)
+            if not os.path.isdir(cen_path):
                 os.mkdir(cen_path)
             np.savetxt(os.path.join(rot_path, 'rot_matrix_%d.txt' % iframe), rot_matrix)
             np.savetxt(os.path.join(cen_path, 'ref_center_%d.txt' % iframe), ref_center)
@@ -298,9 +251,9 @@ def _align_from_matrices(geos_ensemble, mat_path):
         mat_path = os.get_cwd()
     rot_path = os.path.join(mat_path, 'rot_matrices')
     cen_path = os.path.join(mat_path, 'centers')
-    if not os.isdir(rot_path)
+    if not os.path.isdir(rot_path):
         raise ValueError('Missing `rot_matrices` folder')
-    if not os.isdir(cen_path)
+    if not os.path.isdir(cen_path):
         raise ValueError('Missing `centers` folder')
     # Check geos_ensemble types
     if isinstance(geos_ensemble, Ensemble):
@@ -324,7 +277,7 @@ def _align_from_matrices(geos_ensemble, mat_path):
         raise ValueError('Number of atoms and coordinates does not match.')
     for iframe in range(nframes):
         # Check with respect to the ref_fragment
-        if not (ref_atoms == latoms[iframe]).all()
+        if not (ref_atoms == latoms[iframe]).all():
             raise ValueError('Atoms of frame %d do not correspond to the reference geometry' % iframe)
         # Read matrices
         rot_matrix = np.loadtxt(os.path.join(rot_path, 'rot_matrix_%d.txt' % iframe))

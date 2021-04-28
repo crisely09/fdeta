@@ -10,42 +10,13 @@ Base Class for trajectory analysis.
 
 import numpy as np
 from typing import Union
-from fdeta.fragment import Fragment, Ensemble
-from fdeta.kabsch import centroid, kabsch
+from fdeta.fragments import Fragment, Ensemble
+from fdeta.kabsch import perform_kabsch
 from fdeta.uelement import get_unique_elements, UElement
 from fdeta.traj_tools import default_charges, find_unique_elements, atom_to_mass
 from fdeta.traj_tools import data_from_file, clean_atom_name, atom_to_charge
 from fdeta.traj_tools import compute_center_of_mass
 from fdeta.units import BOHR
-
-
-def perform_kabsch(reference, current, centered=False):
-    """Get translation matrix and rotation matrix from Kabsch algorithm.
-    Finds the optimal rotation matrix to align two geometries that are
-    centered on top of each other.
-
-    Parameters
-    ----------
-    reference : np.array
-        Reference geometry to which to align.
-    current : np.array
-        Current working geometry to be aligned.
-    centered : bool
-        Whether or the two geometries are already centered
-        on top of each other (at the origin).
-    """
-    # Get translation vector to move to the origin
-    ref_centroid = centroid(reference) 
-    # ref_centroid = compute_center_of_mass(masses, reference)
-    if not centered:
-        cur_centroid = centroid(current)
-        # cur_centroid = compute_center_of_mass(masses, current)
-        new_current = current - cur_centroid
-        new_reference = reference - ref_centroid
-        rot_matrix = kabsch(new_current, new_reference)
-    else:
-        rot_matrix = kabsch(current, reference)
-    return ref_centroid, rot_matrix
 
 
 def simple_pbc(coords, limits):
@@ -68,27 +39,116 @@ def simple_pbc(coords, limits):
     return result
 
 
-def contract_grid(values_hist):
-    """Return the expanded values on each grid point.
+def get_charge_dist(atoms, geometry, charges, grid_range, grid_bins, zcharge=None,
+                     charge_grid=None):
+    """ Given the method computes the pair correlation function (histogram)
+    of each unique element.
 
     Parameters
-    ----------
-    values_hist
+    ---------
+    grid_range : np.ndarray(float)
+        Range of histogram box
+    grid_bins :
+        Bin specification for the numpy.histogramdd function. Any of the following:
+        1) A sequence of arrays describing the monotonically increasing bin edges
+        along each dimension.
+        2) The number of bins for each dimension (nx, ny, … =bins)
+        3) The number of bins for all dimensions (nx=ny=…=bins).
+    zcharge : dict (str: float)
+        Saved charges from passed atoms
     """
-    vshape = values_hist.shape
-    nx = vshape[0]
-    ny = vshape[1]
-    nz = vshape[2]
-    result = np.zeros(nx*ny*nz)
-    values = values_hist.flatten()
-    count = 0
-    for x in range(nx):
-        for y in range(ny):
-            for z in range(nz):
-                fcount = z + y*ny + x*ny*nz
-                result[count] = values[fcount]
-                count += 1
-    return result
+    if zcharge is None:
+        zcharge = {}
+        c_new_calc = True
+    else:
+        if charge_grid is None:
+            raise ValueError('Missing `charge_grid` parameter.')
+        c_new_calc = False
+    for a in atoms:
+        if a not in zcharge:
+            zcharge[a] = atom_to_charge(a)
+    natoms = len(atoms)
+    # Find all the atoms, even same element with different charges
+    unique_charges = find_unique_elements(charges)
+    lucharges = len(unique_charges)
+    print('Found %d unique charges: ' % lucharges)
+    cstr = '{:.3f}\n'*lucharges
+    print(cstr.format(*unique_charges))
+    for unique in unique_charges:
+        incharges = [iatom for iatom in range(natoms) if unique == charges[iatom]]
+        c_hist, c_edges = np.histogramdd(geometry[incharges], range=grid_range, bins=grid_bins)
+        if c_new_calc:
+            charge_grid = c_hist*unique
+            c_new_calc = False
+        else:
+            charge_grid += c_hist*unique
+    return zcharge, charge_grid
+
+def get_charge_and_electron_dist(atoms, geometry, charges, grid_range, grid_bins, zcharge=None,
+                                  charge_grid=None, electron_grid=None):
+    """ Given the method computes the pair correlation function (histogram)
+    of each unique element.
+
+    Parameters
+    ---------
+    grid_range : np.ndarray(float)
+        Range of histogram box
+    grid_bins :
+        Bin specification for the numpy.histogramdd function. Any of the following:
+        1) A sequence of arrays describing the monotonically increasing bin edges
+        along each dimension.
+        2) The number of bins for each dimension (nx, ny, … =bins)
+        3) The number of bins for all dimensions (nx=ny=…=bins).
+
+    """
+    if zcharge is None:
+        zcharge = {}
+        c_new_calc = True
+        a_new_calc = True
+    else:
+        if charge_grid is None:
+            raise ValueError('Missing `charge_grid` parameter.')
+        if electron_grid is None:
+            raise ValueError('Missing `electron_grid` parameter.')
+        c_new_calc = False
+        a_new_calc = False
+    for a in atoms:
+        if a not in zcharge:
+            zcharge[a] = atom_to_charge(a)
+    natoms = len(atoms)
+    # Find all the atoms, even same element with different charges
+    unique_charges = find_unique_elements(charges)
+    lucharges = len(unique_charges)
+    print('Found %d unique charge(s): ' % lucharges)
+    cstr = '{:.3f}\t'*lucharges
+    print(cstr.format(*unique_charges))
+    for unique in unique_charges:
+        incharges = [iatom for iatom in range(natoms) if unique == charges[iatom]]
+        c_hist, c_edges = np.histogramdd(geometry[incharges], range=grid_range, bins=grid_bins)
+        if c_new_calc:
+            charge_grid = c_hist*unique
+            c_new_calc = False
+        else:
+            charge_grid += c_hist*unique
+        # For density  we only need atom type (element)
+        anames = [atoms[iatom] for iatom in incharges]
+        unique_atoms = find_unique_elements(anames)
+        print('Found %d unique atom(s): ' % len(unique_atoms))
+        cstr = '{:s}\t'*len(unique_atoms)
+        print(cstr.format(*unique_atoms))
+        for uatom in unique_atoms:
+            inatoms = [ind for ind in incharges if atoms[ind] == uatom]
+            a_hist, a_edges = np.histogramdd(geometry[inatoms], range=grid_range, bins=grid_bins) 
+            if unique > 0:
+                ccoeff = zcharge[uatom] - unique
+            else:
+                ccoeff = zcharge[uatom] + abs(unique)
+            if a_new_calc:
+                electron_grid = a_hist*ccoeff
+                a_new_calc = False
+            else:
+                electron_grid += a_hist*ccoeff
+    return zcharge, charge_grid, electron_grid
 
 
 def apply_PBC_translation(current, trans_matrix, grid_range):
@@ -179,9 +239,9 @@ class MDTrajectory:
             path_info = os.getcwd()
         rm_folder = os.path.join(path_info, 'rot_matrices')
         cn_folder = os.path.join(path_info, 'geo_centers')
-        if not os.isdir(rm_folder)):
+        if not os.path.isdir(rm_folder):
             raise ValueError('Wrong folder path for rot_matrices')
-        if not os.isdir(cn_folder):
+        if not os.path.isdir(cn_folder):
             raise ValueError('Wrong folder path for geo_centers')
         # Check reference information
         if not (ref_atoms == frag0.atoms).all():
