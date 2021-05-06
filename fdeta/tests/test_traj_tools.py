@@ -12,6 +12,7 @@ from fdeta.traj_tools import default_charges, flatten_list
 from fdeta.traj_tools import get_data_lines, read_xyz_trajectory
 from fdeta.traj_tools import read_pqr_trajectory, read_gromacs_trajectory
 from fdeta.traj_tools import data_from_file, make_trajectory_file
+from fdeta.traj_tools import get_files_ids
 
 
 def test_compute_center_of_mass():
@@ -100,9 +101,9 @@ def test_read_xyz_trajectory():
     traj = os.path.join(dic, 'test_traj.fde')
     geos1 = read_xyz_trajectory(traj)
     geos2 = read_xyz_trajectory(traj, has_ids=True)
-    assert not flatten_list(geos1['elements'])
-    assert geos2['elements'][0] == ref_elements
-    assert np.allclose(geos2['geometries'][0][:3], ref_coords)
+    assert not flatten_list(geos1['atoms'])
+    assert geos2['atoms'][0] == ref_elements
+    assert np.allclose(geos2['coords'][0][:3], ref_coords)
     assert geos2['ids'][0][:10] == ['0']*10
 
 
@@ -134,9 +135,18 @@ def test_data_from_file():
     dic = os.getenv('FDETADATA')
     traj = os.path.join(dic, 'test_traj.fde')
     geos = data_from_file(traj)
-    assert geos['elements'][0] == ref_elements
-    assert np.allclose(geos['geometries'][0][:3], ref_coords)
+    assert geos['atoms'][0] == ref_elements
+    assert np.allclose(geos['coords'][0][:3], ref_coords)
     assert geos['ids'][0][:10] == ['0']*10
+
+
+def test_get_files_ids():
+    """Chefk if I can get the ids of a list of files."""
+    ref_ids = [0, 1]
+    dic = os.getenv('FDETADATA')
+    files = [os.path.join(dic, 'test_0.pqr'), os.path.join(dic, 'test_1.pqr')]
+    ids = get_files_ids(files)
+    assert np.allclose(ref_ids, ids)
 
 
 def test_check_length_trajectories():
@@ -157,4 +167,5 @@ if __name__ == "__main__":
     test_clean_atom_name()
     test_read_xyz_trajectory()
     test_data_from_file()
+    test_get_files_ids()
 #   test_gromacs_trajectory()

@@ -5,10 +5,47 @@ Tools for MDTrajectory Class.
 
 """
 
+import re
 import os
 import numpy as np
 from typing import Union
 from qcelemental import periodictable
+
+
+
+def try_int(s):
+    """Check if a variable is integer.
+
+    Parameters
+    ----------
+    s : var
+        The variable to check.
+    """
+    try:
+        return int(s)
+    except:
+        return s
+
+
+def alphanum_key(s):
+    """ Turn a string into a list of string and number chunks.
+        "z23a" -> ["z", 23, "a"]
+    """
+    return [try_int(c) for c in re.split('([0-9]+)', s)]
+
+
+def sort_human(l):
+    """ Sort the given list in the way that humans expect.
+    """
+    l.sort(key=alphanum_key)
+
+
+def find_int(string):
+    """Find the first integer in a list of strings"""
+    for s in string:
+        if isinstance(s, int):
+            return s
+    return None
 
 
 def compute_center_of_mass(mass: np.ndarray, coordinates: np.ndarray) -> float:
@@ -112,6 +149,66 @@ def get_data_lines(files: Union[str, list]):
     return data
 
 
+def get_files_ids(files):
+    """Get id/number from a list of files.
+
+    files : list(dir)
+        List of paths of the files to be identified.
+
+    Return
+    ------
+    ids: list(int)
+        List with all the ids of files.
+    """
+    ids = list()
+    for fname in files:
+        name = fname.split('/')[-1]
+        key = alphanum_key(name)
+        ids.append(find_int(key))
+    return ids
+
+
+def read_xyz_file(fname: str) -> dict:
+    """Read info from one.
+
+    Parameters
+    ----------
+    fname :  str
+       Path to file to read.
+
+    Returns
+    -------
+    geos : dict
+        Elements, geometries and ids lists.
+    """
+    data = get_data_lines(fname)
+    atoms = []
+    coords = []
+    atomic_info = 4
+    # Separate information
+    for i, line in enumerate(data):
+        splits = line.split()
+        if i == 0:
+            natoms = int(line.strip())
+        elif i == 1:
+            pass
+        else:
+            if not len(splits) == atomic_info:
+                raise ValueError("""This is not a standard -one molecule- file."""
+                                 """ See read_xyz_trajectory for multiple molecules.""")
+            atoms.append(splits[0])
+            xyz = [float(x) for x in splits[1:4]]
+            coords.append(xyz)
+    if natoms != len(atoms):
+        raise ValueError('Wrong number of atoms in file.')
+    if natoms != len(coords):
+        raise ValueError('Wrong number of coordinates of atoms in file.')
+    atoms = np.array(atoms)
+    coords = np.array(coords)
+    geos = dict(atoms=atoms, coords=coords)
+    return geos
+
+
 def read_xyz_trajectory(files: Union[str, list],
                         has_ids: bool = False) -> dict:
     """Read info from one or multiple files.
@@ -127,8 +224,9 @@ def read_xyz_trajectory(files: Union[str, list],
         Elements, geometries and ids lists.
     """
     data = get_data_lines(files)
-    elements = []
-    geometries = []
+    frameids = get_files_ids(files)
+    atoms = []
+    coords = []
     if has_ids:
         ids = []
         atomic_info = 5
@@ -139,23 +237,48 @@ def read_xyz_trajectory(files: Union[str, list],
         splits = line.split()
         if len(splits) == 1:
             new_geo = False
-            elements.append([])
-            geometries.append([])
+            atoms.append([])
+            coords.append([])
             if has_ids:
                 ids.append([])
         elif len(splits) == atomic_info:
-            elements[-1].append(splits[0])
+            atoms[-1].append(splits[0])
             xyz = [float(x) for x in splits[1:4]]
-            geometries[-1].append(xyz)
+            coords[-1].append(xyz)
             if has_ids:
                 ids[-1].append(splits[4])
         else:
             pass
     if has_ids:
-        geos = dict(elements=elements, geometries=geometries, ids=ids)
+        geos = dict(atoms=atoms, coords=coords, ids=ids, frameinds=frameids)
     else:
-        geos = dict(elements=elements, geometries=geometries)
+        geos = dict(atoms=atoms, coords=coords, frameids=frameids)
     return geos
+
+
+def read_pqr_file(fname: str) -> dict:
+    """Read info from one or multiple files.
+
+    Parameters
+    ----------
+    files :  str or list(str)
+        File or list of files to read.
+    """
+    data = get_data_lines(fname)
+    atoms = []
+    coords = []
+    charges = []
+    for n, line in enumerate(data):
+        splits = line.split()
+        if "ATOM" in splits[0]:
+            atoms.append(splits[2])
+            coords.append([float(x) for x in splits[5:8]])
+            charges.append(float(splits[8]))
+        else:
+            pass
+    # Clean last element of list
+    info = dict(atoms=atoms, coords=coords, charges=charges)
+    return info
 
 
 def read_pqr_trajectory(files: Union[str, list]) -> dict:
@@ -167,23 +290,28 @@ def read_pqr_trajectory(files: Union[str, list]) -> dict:
         File or list of files to read.
     """
     data = get_data_lines(files)
-    elements = [[]]
-    geometries = [[]]
+    frameids = get_files_ids(files)
+    atoms = [[]]
+    coords = [[]]
+    charges = [[]]
     for n, line in enumerate(data):
         splits = line.split()
         if len(splits) == 1:
-            elements.append([])
-            geometries.append([])
+            atoms.append([])
+            coords.append([])
+            charges.append([])
         elif "ATOM" in splits[0]:
-            elements[-1].append(splits[2])
-            geometries[-1].append([float(x) for x in splits[5:8]])
+            atoms[-1].append(splits[2])
+            coords[-1].append([float(x) for x in splits[5:8]])
+            charges[-1].append(float(splits[8]))
         else:
             pass
     # Clean last element of list
-    elements.pop()
-    geometries.pop()
-    geos = dict(elements=elements, geometries=geometries)
-    return geos
+    atoms.pop()
+    coords.pop()
+    charges.pop()
+    info = dict(atoms=atoms, coords=coords, charges=charges, frameids=frameids)
+    return info
 
 
 def read_gromacs_trajectory(files: Union[str, list],
