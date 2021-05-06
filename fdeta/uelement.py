@@ -8,10 +8,8 @@ Base Class for trajectory analysis.
 
 """
 
-import numpy as np
-from typing import Union
-from fdeta.traj_tools import default_charges, find_unique_elements, atom_to_mass
-from fdeta.traj_tools import data_from_file, clean_atom_name, atom_to_charge
+from fdeta.traj_tools import atom_to_mass
+from fdeta.traj_tools import clean_atom_name, atom_to_charge
 
 
 def get_unique_elements(elements, charges):

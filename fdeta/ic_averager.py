@@ -31,7 +31,7 @@ vdp = {"dihedral": "dih", "dihedrals": "dih",  "d": "dih", "dih": "dih",
          "angle": "angles", "angles": "angles", "a": "angles",  # Variable Dictionary Plural
          "b": "bonds", "bond": "bonds", "bonds": "bonds"}
 vdf = {"dihedral": "dihedral", "d": "dihedral", "dih": "dihedral",  # Variable Dictionary Frame
-         "angle": "angle", "angle": "angle", "a": "angle", 
+         "angle": "angles", "angle": "angle", "a": "angle", 
          "b": "bond", "bond": "bond", "bonds": "bond"}
 
 # max-min funcs
@@ -1566,7 +1566,7 @@ class Ic_averager:
                 print("saved bonds,angles,dihedrals in {} respectively".format(", ".join(
                     [int_coord_file[:-4] + i + int_coord_file[-4:] for i in["_bonds", "_angles", "_dihedrals"]])))
         return cls(source, bonds, angles, dih, zmat1, c_table)
-#       
+        
     @classmethod
     def from_aligned_cartesian_file(cls, aligned_fn: str = "aligned0.xyz", 
                                     int_coord_file: str = "internal_coordinates.npz",
@@ -1761,7 +1761,7 @@ class Ic_averager:
         """
         var = vdp[var] if var in vdp.keys() else var
         index = index if type(index) in [list, np.ndarray] else [index]  # make list if is not
-        if var == "dih" and pos_range == None:
+        if var == "dih" and pos_range is None:
             pos_range = True if sum([1 if i in self.use_c else -1 for i in index])> 0 else False  # looks at all dihedrals
             data = getattr(self, "dih_c" if pos_range else "dih")
         else:
@@ -1854,14 +1854,15 @@ class Ic_averager:
         """
         index = index if type(index) in [list, np.ndarray] else [index]  # make list if is not
         var = vdp[var] if var in vdp.keys() else var
-        if var == "dih" and pos_range == None:
+        if var == "dih" and pos_range is None:
             pos_range = True if sum([1 if i in self.use_c else -1 for i in index])> 0 else False  # looks at all dihedrals
             data = getattr(self, "dih_c" if pos_range else "dih")
         else:
             data = getattr(self, var)
         if not label:
             label = list(self.c_table.index[index])
-        return plot_distrib(data, index, basins=basins, bins=bins, var=var, title=title,pos_range=pos_range, label=label, alpha=alpha, legend=legend)
+        return plot_distrib(data, index, basins=basins, bins=bins, var=var, title=title,
+                            pos_range=pos_range, label=label, alpha=alpha, legend=legend)
         
     def plot_2Ddistrib(self, index: list, var: Union[list, tuple, str] = "dihedral", bins: int = 36,
                  labels: list= [],  title: str = "",
@@ -1891,7 +1892,7 @@ class Ic_averager:
         if type(var) == str:
             var = [var, var]
         var = [vdp[v] if v in vdp.keys() else v for v in var]
-        if pos_range == None:
+        if pos_range is None:
             pos_range = [None, None]
             data = [None, None]
             for n,v in enumerate(var):
@@ -2116,7 +2117,7 @@ class Ic_averager:
         """
         # TODO make indexes a list
         using_c = False
-        if index == None:
+        if index is None:
             raise ValueError("You must specify \"index\".")
         if var == "":
             print("no variable type specified, supposing it is \"dihedral\"")
@@ -2226,7 +2227,7 @@ class Ic_averager:
         try:
             groupsets = [i for i in self.__dict__.keys() if i not in builtin]  # no builtins
             groupsets = [i for i in groupsets if type(getattr(self,i))==list and type(getattr(self,i)[0]) == Group]  # only if first element is a group
-        except:
+        except BaseException:
             groupsets = []
             print("no groupsets")
         for gs in groupsets:

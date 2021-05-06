@@ -314,16 +314,13 @@ def read_pqr_trajectory(files: Union[str, list]) -> dict:
     return info
 
 
-def read_gromacs_trajectory(files: Union[str, list],
-                            solute: Union[list, np.ndarray]) -> dict:
+def read_gromacs_trajectory(files: Union[str, list]) -> dict:
     """Read info from one or multiple files.
 
     Parameters
     ----------
     files :  str or list(str)
         File or list of files to read.
-    solute : list or np.ndarray
-        Indices of the solute fragment
 
     Returns
     -------
@@ -341,16 +338,13 @@ def read_gromacs_trajectory(files: Union[str, list],
     nframes = len(u.trajectory)
     geometries = []
     elements_all = []
-    ids = []
-    id_tmp = [0 if i in solute else 1 for i in range(natoms)]
     for nf in range(nframes):
         xyz = u.trajectory[nf].positions.copy()
         geometries.append(xyz)
         elements_all.append(elements)
-        ids.append(id_tmp)
         
     # Define dictionary
-    data = dict(elements=elements_all, geometries=geometries, ids=ids)
+    data = dict(elements=elements_all, geometries=geometries)
     return data
 
 

@@ -3,12 +3,10 @@
 
 
 import numpy as np
-import qcelemental as qce
 
 from fdeta.traj_tools import compute_center_of_mass
 from fdeta.fragments import find_fragments, get_interfragment_distances
 from fdeta.kabsch import centroid
-from fdeta.units import BOHR
 
 
 
@@ -60,34 +58,6 @@ def center_of_mass_distance(ref_elements, ref_geo, work_elements, work_geo):
     work_masses = [atom_to_mass(e) for e in work_elements]
     work_center = compute_center_of_mass(work_masses, work_geo)
     return np.linalg.norm(ref_center - work_center)
-
-
-def compute_pcf(ref_elmts, ref_geos, work_elmts,
-                work_geos, dist_type='cofmass'):
-    """Compute the pair correlation function between a reference
-       molecule/fragment and the rest.
-
-    Parameters
-    ----------
-    ref_elmts : list or array(str)
-        Atomic symbols of the reference molecule/fragment.
-    ref_geos : np.ndarray((natoms, 3))
-        Geometries of the reference molecule.
-    work_elmts : list or array(str)
-        Atomic symbols of the rest of molecules/fragmets
-    work_geos : np.darray
-        Geometries of the rest of the molecules.
-    dist_type : str
-        Type of distance to use. The options are:
-        `cofmass` : use the distance of the center of mass.
-        `centroid` : use the distance between the geometric centroid.
-        `shortest` : use the shortest distance between the atoms of
-        each fragment.
-    """
-    # Get the all the fragments from the work_geos
-    frags = find_fragments(work_elmts, work_geos)[1]
-    distances = []
-#   if dist_type == ''
 
 
 def compute_rad(ref_points, grid_values, bins=20, limits=None):
