@@ -275,7 +275,7 @@ def make_supercube(blims, atoms, geometries):
     return new_atoms, new_geometries
 
 
-def expand_grid_information(values_hist):
+def expand_grid_info(values_hist):
     """Return the expanded values on each grid point.
 
     Note
@@ -296,7 +296,7 @@ def expand_grid_information(values_hist):
     for x in range(nx):
         for y in range(ny):
             for z in range(nz):
-                fcount = z + y*ny + x*ny*nz
+                fcount = z + y*nz + x*ny*nz
                 result[count] = values[fcount]
                 count += 1
     return result

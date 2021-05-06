@@ -31,13 +31,21 @@ def alphanum_key(s):
     """ Turn a string into a list of string and number chunks.
         "z23a" -> ["z", 23, "a"]
     """
-    return [try_int(c) for c in re.split('([0-9]+)', s) ]
+    return [try_int(c) for c in re.split('([0-9]+)', s)]
 
 
 def sort_human(l):
     """ Sort the given list in the way that humans expect.
     """
     l.sort(key=alphanum_key)
+
+
+def find_int(string):
+    """Find the first integer in a list of strings"""
+    for s in string:
+        if isinstance(s, int):
+            return s
+    return None
 
 
 def compute_center_of_mass(mass: np.ndarray, coordinates: np.ndarray) -> float:
@@ -141,6 +149,25 @@ def get_data_lines(files: Union[str, list]):
     return data
 
 
+def get_files_ids(files):
+    """Get id/number from a list of files.
+
+    files : list(dir)
+        List of paths of the files to be identified.
+
+    Return
+    ------
+    ids: list(int)
+        List with all the ids of files.
+    """
+    ids = list()
+    for fname in files:
+        name = fname.split('/')[-1]
+        key = alphanum_key(name)
+        ids.append(find_int(key))
+    return ids
+
+
 def read_xyz_file(fname: str) -> dict:
     """Read info from one.
 
@@ -197,6 +224,7 @@ def read_xyz_trajectory(files: Union[str, list],
         Elements, geometries and ids lists.
     """
     data = get_data_lines(files)
+    frameids = get_files_ids(files)
     atoms = []
     coords = []
     if has_ids:
@@ -222,9 +250,9 @@ def read_xyz_trajectory(files: Union[str, list],
         else:
             pass
     if has_ids:
-        geos = dict(atoms=atoms, coords=coords, ids=ids)
+        geos = dict(atoms=atoms, coords=coords, ids=ids, frameinds=frameids)
     else:
-        geos = dict(atoms=atoms, coords=coords)
+        geos = dict(atoms=atoms, coords=coords, frameids=frameids)
     return geos
 
 
@@ -262,6 +290,7 @@ def read_pqr_trajectory(files: Union[str, list]) -> dict:
         File or list of files to read.
     """
     data = get_data_lines(files)
+    frameids = get_files_ids(files)
     atoms = [[]]
     coords = [[]]
     charges = [[]]
@@ -281,7 +310,7 @@ def read_pqr_trajectory(files: Union[str, list]) -> dict:
     atoms.pop()
     coords.pop()
     charges.pop()
-    info = dict(atoms=atoms, coords=coords, charges=charges)
+    info = dict(atoms=atoms, coords=coords, charges=charges, frameids=frameids)
     return info
 
 

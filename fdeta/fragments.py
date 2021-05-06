@@ -9,7 +9,7 @@ import os
 import numpy as np
 import qcelemental as qce
 from fdeta.kabsch import perform_kabsch, centroid
-from fdeta.traj_tools import read_xyz_file, read_pqr_file, sort_human
+from fdeta.traj_tools import read_xyz_file, read_pqr_file, sort_human, try_int
 from fdeta.traj_tools import read_xyz_trajectory, read_pqr_trajectory
 
 
@@ -143,6 +143,61 @@ def _core_align(rot_matrix, ref_center, work_geo, work_center, return_mat=False)
         return work_geo
 
 
+def align_one(work_frag, ref_frag, save_matrix=False, mat_path=None,
+              save_center=False, frameid=None):
+    """Align only one geometry to a reference geometry.
+
+    ref_frag : dict/Fragment
+        Information of the reference fragment used for the aligning.
+    save_matrices :  bool
+        Weather to save the `rot_matrices` and the `centers` to files.
+    mat_path : str
+        Path where to save the matrices when `save_matrices` is set to True.
+    """
+    if isinstance(work_frag, Fragment):
+        atoms = work_frag.atoms
+        work_geo = work_frag.coords
+    elif isinstance(work_frag, dict):
+        is_ensemble = False
+        atoms = work_frag['atoms']
+        work_geo = work_frag['coords']
+    else:
+        raise TypeError("""Geometries to be aligned must be given either as a dict(atoms, geos)"""
+                        """ or as an instance of the Ensemble object.""")
+    # Check ref_frag types
+    if isinstance(ref_frag, Fragment):
+        ref_atoms = ref_frag.atoms
+        ref_geo = ref_frag.coords
+    elif isinstance(ref_frag, dict):
+        ref_atoms = ref_frag['atoms']
+        ref_geo = ref_frag['coords']
+        if isinstance(ref_geo, list):
+            tmp = np.array(ref_geo)
+            if tmp.shape[1] != 3:
+                raise ValueError('Expecting one single geometry, with shape (natoms, 3).')
+    ref_center, rot_matrix = perform_kabsch(ref_geo, work_geo, centered=False)
+    work_center = centroid(work_geo)
+    new_geo = _core_align(rot_matrix, ref_center, work_geo, work_center)
+    # Replace values
+    if not is_ensemble:
+        work_frag['coords'][:] = new_geo.copy()
+    else:
+        work_frag.coords[:] = new_geo.copy()
+    # Save matrices
+    if save_matrix:
+        if mat_path is None:
+            mat_path = os.getcwd()
+        rot_path = os.path.join(mat_path, 'rot_matrices')
+        if not os.path.isdir(rot_path):
+            os.mkdir(rot_path)
+        if frameid is None:
+            np.savetxt(os.path.join(rot_path, 'rot_matri.txt'), rot_matrix)
+        else:
+            np.savetxt(os.path.join(rot_path, 'rot_matrix_%d.txt' % frameid), rot_matrix)
+        if save_center:
+            np.savetxt(os.path.join(mat_path, 'ref_center.txt'), ref_center)
+
+
 def _align_from_scratch(geos_ensemble, ref_frag, save_matrices=False, mat_path=None):
     """Align a set of geometries comparing to a reference geometry.
 
@@ -190,7 +245,7 @@ def _align_from_scratch(geos_ensemble, ref_frag, save_matrices=False, mat_path=N
         raise ValueError('Number of atoms and coordinates does not match.')
     for iframe in range(nframes):
         # Check with respect to the ref_fragment
-        if not (ref_atoms == latoms[iframe]):
+        if not (ref_atoms == latoms[iframe]).all():
             raise ValueError('Atoms of frame %d do not correspond to the reference geometry' % iframe)
         work_geo = lcoords[iframe]
         ref_center, rot_matrix = perform_kabsch(ref_geo, work_geo, centered=False)
@@ -233,14 +288,17 @@ def _align_from_matrices(geos_ensemble, mat_path=None):
         is_ensemble = True
         latoms = list()
         lcoords = list()
+        lframeids = list()
         for iframe in range(geos_ensemble.nframes):
             ifrag = geos_ensemble.fragments[iframe]
             latoms.append(ifrag.atoms)
             lcoords.append(ifrag.coords)
+            lframeids.append(ifrag.frameid)
     elif isinstance(geos_ensemble, dict):
         is_ensemble = False
         latoms = geos_ensemble['atoms']
         lcoords = geos_ensemble['coords']
+        lframeids = geos_ensemble['frameids']
     else:
         raise TypeError("""Geometries to be aligned must be given either as a dict(atoms, geos)"""
                         """ or as an instance of the Ensemble object.""")
@@ -251,15 +309,16 @@ def _align_from_matrices(geos_ensemble, mat_path=None):
     ref_center = np.loadtxt(os.path.join(mat_path, 'ref_center.txt'))
     for iframe in range(nframes):
         # Read matrices
+        frameid = lframeids[iframe]
         work_geo = lcoords[iframe]
         work_center = centroid(work_geo)
-        rot_matrix = np.loadtxt(os.path.join(rot_path, 'rot_matrix_%d.txt' % iframe))
+        rot_matrix = np.loadtxt(os.path.join(rot_path, 'rot_matrix_%d.txt' % frameid))
         new_geo = _core_align(rot_matrix, ref_center, work_geo, work_center)
         # Replace values
         if not is_ensemble:
             geos_ensemble['coords'][iframe][:] = new_geo.copy()
         else:
-            geos_ensemble.frag[iframe].coords[:] = new_geo.copy()
+            geos_ensemble.fragments[iframe].coords[:] = new_geo.copy()
 
 
 def align_frames(geos_ensemble, ref_frag=None, mat_path=None, save_matrices=False):
@@ -282,7 +341,7 @@ def align_frames(geos_ensemble, ref_frag=None, mat_path=None, save_matrices=Fals
             raise ValueError("""Please provide either a reference fragment or a path to """
                              """rotation matrices and centers of geometry.""")
         else:
-            _align_from_matrices(geos_ensemble, mat_math)
+            _align_from_matrices(geos_ensemble, mat_path)
     else:
         _align_from_scratch(geos_ensemble, ref_frag, mat_path=mat_path,
                                    save_matrices=save_matrices)
@@ -306,7 +365,7 @@ class Fragment():
     from_file(fname)
 
     """
-    def __init__(self, atoms, coords, charges=None):
+    def __init__(self, atoms, coords, charges=None, frameid=None):
         """Create a Fragment object.
 
         Parameters
@@ -345,6 +404,7 @@ class Fragment():
         if len(self.atoms) != len(self.coords):
             raise ValueError('Wrong number of atoms and coordinates, they should be the same.')
         self.latoms = len(self.atoms)
+        self.frameid = frameid
             
 
     def __str__(self):
@@ -377,18 +437,24 @@ class Fragment():
         -------
         frag : An instance of fragment class.
         """
+        name = fname.split('.')[-1]
+        check_number = try_int(name.split('_')[-1])
+        if isinstance(check_number, int):
+            frameid = check_number
+        else:
+            frameid = None
         if fname.endswith('.xyz'):
             info = read_xyz_file(fname)
             atoms = info['atoms']
             coords = info['coords']
             charges = None
-            return cls(atoms, coords, charges)
+            return cls(atoms, coords, charges, frameid=frameid)
         elif fname.endswith('.pqr'):
             info = read_pqr_file(fname)
             atoms = info['atoms']
             coords = info['coords']
             charges = info['charges']
-            return cls(atoms, coords, charges)
+            return cls(atoms, coords, charges, frameid=frameid)
         else:
             raise NotImplementedError('Only files with xyz or pqr extension are implemented.')
 
@@ -405,7 +471,7 @@ class Ensemble():
     -------
     from_files : Read info from a set of files. 
     """
-    def __init__(self, latoms, lcoords, lcharges):
+    def __init__(self, latoms, lcoords, lcharges, lframeids=None):
         """Create an ensemble of fragments.
 
         Parameters
@@ -425,8 +491,12 @@ class Ensemble():
         if not len(lcharges) == len(lcoords):
             raise ValueError('The number of `lcharges` and `lcoords` should be the same.')
         self.nframes = len(latoms)
+        self.lframeids = lframeids
+        if lframeids is None:
+            lframeids = [i for i in range(self.nframes)]
         # Make list of fragments
-        self.fragments = [Fragment(latoms[iframe], lcoords[iframe], lcharges[iframe]) for iframe in range(self.nframes)]
+        self.fragments = [Fragment(latoms[iframe], lcoords[iframe], lcharges[iframe],
+                                   frameid=lframeids[iframe]) for iframe in range(self.nframes)]
 
     @classmethod
     def from_files(cls, folder, basename, extension='pqr'):
@@ -446,9 +516,10 @@ class Ensemble():
         sort_human(files)
         if extension == 'pqr':
             lfiles = [os.path.join(folder, f) for f in files if f.endswith('.pqr') and basename in f]
+            nfrags = len(lfiles)
             info = read_pqr_trajectory(lfiles)
         if extension == 'xyz':
             lfiles = [os.path.join(folder, f) for f in files if f.endswith('.xyz') and basename in f]
             info = read_xyz_trajectory(lfiles)
             info['charges'] = None
-        return cls(info['atoms'], info['coords'], info['charges'])
+        return cls(info['atoms'], info['coords'], info['charges'], lframeids=info['frameids'])
