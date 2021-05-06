@@ -102,9 +102,22 @@ def str2cart(xyz_str: str, start_index: int = 1):
     mol = cc.Cartesian.read_xyz(tofeed, start_index=start_index)
     return mol
 
-def intervals_from_array(arr):
+def intervals_from_array(arr: Union[np.array, list]):
     """
-    TODO docstring
+    Note
+    ----
+    Given some array, gives a more compact representation using intervals, like printing pages.
+    e.g. [1,2,3,4,7,8,9,11,13,14,15,16,17] => "1-4, 7-9, 11, 13-17"
+    Useful to mentally process huge arrays of frame numbers
+    
+    Parameters
+    ----------
+    arr: list/arr(1D)
+    
+    Returns
+    -------
+    str
+        the interval-like expression of the array
     """
     n = 0
     strlst = []
@@ -190,15 +203,40 @@ def slicestr(slc: Union[slice, list, tuple]):
     elif type(slc) in [list, tuple, np.array]:
         return str(list(slc))
 
-def running_avg(arr, res):
+def running_avg(arr: np.array, res: int):
     """
-    TODO docstring
+    Parameters
+    ----------
+    arr: np.arr
+        the array to get the running average of
+    res: int
+        the size of the running interval.
+    
+    Returns
+    -------
+    np.arr
+        the running average
     """
     return np.convolve(arr, np.ones(res)/res, mode="same")
 
-def ravg_edges(arr, res):
+def ravg_edges(arr: np.array, res: int):
     """
-    TODO docstring
+    Note
+    ----
+    avoids issues at edges by progressively reducing the size of the average
+    interval near beginning and end.
+    It ensures, for instance, that ravg_edges(np.ones(N), res) => np.ones(N)
+    Parameters
+    ----------
+    arr: np.arr
+        the array to get the running average of
+    res: int
+        the size of the running interval.
+    
+    Returns
+    -------
+    np.arr
+        the running average
     """
     ravg = running_avg(arr, res)
     offset = res // 2
@@ -209,9 +247,29 @@ def ravg_edges(arr, res):
         ravg[-o] = arr[-o:].mean()
     return ravg
 
-def slice_ravg(arr, left, right, res):
+def slice_ravg(arr: np.array, left: int, right: int, res: int):
     """
-    TODO docstring
+    Note
+    ----
+    calculates running average of a slice of and array avoiding edge issues.
+    It corresponds to slicing the running average of the whole array but avoids 
+    calculating it out of the requested slice.
+    
+    Parameters
+    ----------
+    arr: np.arr
+        the array to get the running average of
+    left: int
+        start slicing index
+    right: int
+        end slicing index
+    res: int
+        the size of the running interval.
+    
+    Returns
+    -------
+    np.arr
+        the running average in the slice requested
     """
     offset = res // 2
     start = left - offset
@@ -419,7 +477,25 @@ def plot_time_evo(data: np.ndarray, index: Union[list,int], var: str = "dihedral
 
 def grouplist_to_indexes(group_list: list, ic: bool = True, cart: bool = False, numbering: str = ""):
     """
-    TODO docstring
+    Note
+    ----
+    Gets all indexes in a grouplist
+    
+    Parameters
+    ----------
+    group:list: list
+        the group_list
+    ic: bool
+        whether to get the ic-indexes
+    cart: bool 
+        whether to get the cartesian indexes
+    numbering: str
+        indexes to return
+    
+    Returns
+    -------
+    list/(list,list)
+        list if only one type, (ic, cart) if both
     """
     if numbering:
         if "ic" in numbering or "internal" in numbering:
@@ -542,16 +618,41 @@ class Group:
     def basins_from_time_domains(self, overwrite: bool = False, thresh_chunk: Union[int, float] = 25,
                                  thresh_frame : Union[int, float] = 5, max_counter :  int = 3,
                                  res_chunks: int = 15, res_ravg: int = 10,
-                                 recalculate: bool = False, thresh_centers: int = 4,
-                                 check_thresh: int = 10):
+                                 recalculate: bool = False, thresh_centers: Union[int, float] = 4,
+                                 check_thresh: Union[int, float] = 10):
         """
         Note
         ----
-        TODO        
+        Gets basins from time domains. Uses threshold for centers of time domains
+        to decide if they pertain to the same basin.
+        
         Parameters
         ----------
         overwrite: bool
             whether present basins should be overwritten or not, default is False
+        thresh_chunk: int/float
+            threshold to detect approximate position of a jump via chunk displacement
+        thresh_frame: int/float
+            threshold to detect exact position of a jump via running average displacement
+        max_counter: int
+            number or consecutive values of running average above thresh_frame necessary
+            for a jump
+        res_chunks: int
+            size of the chunks for the chunk displacement
+        res_ravg: int
+            resolution/interval for the running average. 
+            res_ravg > res_chunks raises error
+        recalculate: bool
+            whether the chunk displacement should be recalculated
+        thresh_centers: int/float
+            threshold for centers to the closest one
+        check_thresh: int/float
+            threshold for min-max center of domains grouped into a basin
+            
+        Sets
+        ----
+        self._basins, self._centers
+            lists of frames and centers
         """
         if overwrite or not hasattr(self,"_basins"):
             print("calculating basins from time domains")
@@ -566,7 +667,19 @@ class Group:
     
     def get_frames(self, basin: Union[int, str] = 1):
         """
-        TODO docstring
+        Note
+        ----
+        Gets frame numbers for a specific basin
+        
+        Parameters
+        ----------
+        basin: int/str
+            int for n-th basin by size, "res" for the one that minimises residuals
+        
+        Returns
+        -------
+        list
+            the frames of the desired basin for the selected atom
         """
         if type(basin) in [int, np.int32, np.int64]:
             return self.basins[self.selected][nthtolast(self.weights[self.selected], basin)]  
@@ -585,9 +698,22 @@ class Group:
         self.get_basins()
         return self._basins
     
-    def set_basins(self, basins):
+    def set_basins(self, basins: list):
         """
-        TODO docstring
+        Note
+        ----
+        Sets basins to the provided lists, automatically updates centers.
+        Useful if one wants to tinker with basins found with other functions (e.g. join two basins)
+        
+        Parameters
+        ----------
+        basins: list
+            list of frames for each frame for each atom.
+            nb. the size is not checked
+        
+        Sets
+        ----
+        self._basins, self._centers
         """
         self._basins = basins
         avg = cast(self.avg_id, py_object).value
@@ -775,7 +901,6 @@ class Group:
                      legend: bool = True, displacement: bool = False, ravg: bool = False,
                      res_displ: int = 15, res_ravg: int = 10, recalculate: bool = False):
         """
-        TODO update docstring
         Note
         ----
         Plots time evolution of each variable in group, each in a separate picture
@@ -784,7 +909,21 @@ class Group:
         ----------
         title: str
             title for the plot. default is empty string
-            
+        centers: bool
+            whether the centers should be plotted (dashed lines)
+        basins: bool
+            whether the basins should be plotted with different colors
+        displacement: bool
+            whether the chunk displacement should be plotted
+        ravg: bool
+            whether the running average should be plotted
+        res_displ: int
+            the size of the chunks for the displacement
+        res_ravg: int
+            the time interval for the running average
+        recalculate: bool
+            whether running average and/or displacement should be recalculated
+            (use if changing res)
         Returns
         -------
         plt.figures
@@ -808,7 +947,6 @@ class Group:
     def time_evo(self, title: str = "", displacement: bool = False, ravg: bool = False,
                  res_displ: int = 15, res_ravg: int = 10, recalculate: bool = False):
         """
-        TODO update docstring
         Note
         ----
         Plots time evolution of each variable in group, all in the same picture
@@ -817,7 +955,17 @@ class Group:
         ----------
         title: str
             title for the plot. default is empty string
-        
+        displacement: bool
+            whether the chunk displacement should be plotted
+        ravg: bool
+            whether the running average should be plotted
+        res_displ: int
+            the size of the chunks for the displacement
+        res_ravg: int
+            the time interval for the running average
+        recalculate: bool
+            whether running average and/or displacement should be recalculated
+            (use if changing res)
         Returns
         -------
         plt.figure
@@ -954,7 +1102,21 @@ def intersect_lists(ll: list):  # tested to be faster than other possible method
 
 def get_frames(gr: Group, basin: Union[int, str] = 1):
     """
-    TODO docstring
+    Note
+    ----
+    Gets frame numbers for a specific basin
+    
+    Parameters
+    ----------
+    gr: Group
+        the group to get the frames from
+    basin: int/str
+        int for n-th basin by size, "res" for the one that minimises residuals
+    
+    Returns
+    -------
+    list
+        the frames of the desired basin for the selected atom
     """
     if type(basin) in [int, np.int32, np.int64]:
         return gr.basins[gr.selected][nthtolast(gr.weights[gr.selected], basin)]  
@@ -1189,7 +1351,27 @@ class Ic_averager:
     def displacement_analysis(self, var: str = "dih", index: Union[list, np.ndarray, int, str] = "all",
                               thresh_chunk: Union[int, float] = 25, res_chunks: int = 15, recalculate: bool = False):
         """
-        TODO: docstring
+        Note
+        ----
+        Obtains chunk displacement, detects estimated position of jumps above threshold
+        
+        Parameters
+        ----------
+        var: str
+            variable. default is "dih"
+        index: list, array, "all"
+            the index(es) to analyse. use all for np.arange(natoms)
+        thresh_chunk: int/float
+            threshold for displacement above which a jump is detected
+        res_chunk: int
+            size of the chunks used for the displacement
+        recalculate: bool
+            whether the displacement should be recalculated
+            
+        Returns
+        -------
+        dict
+            {idx: [estimated jumps positions]}
         """
         if index in ([], np.array([])):
             raise ValueError("You must specify some indexes! (in ic_numbering)")
@@ -1240,6 +1422,26 @@ class Ic_averager:
                 
     def get_ravg(self, var: str = "dih", index: Union[list, np.ndarray, int, str] = [],
                  res: int = 15, fix_edges: bool = True):
+        """
+        Note
+        ----
+        Gets running average for a specified variable and index and saves it
+        
+        Parameters
+        ----------
+        var: str
+            variable. default is "dih"
+        index: list, array, "all"
+            the index(es) to analyse. use all for np.arange(natoms)
+        res: int
+            the time interval for the running average
+        fix_edges: bool
+            whether boundary issues should be fixed
+            
+        Sets
+        ----
+        self.var_m[idx] = (array of ravg, res)
+        """
         if index in ([], np.array([])):
             raise ValueError("You must specify some angles! (in ic_numbering)")
         elif type(index) in [int, np.int32, np.int64]:
@@ -1273,7 +1475,30 @@ class Ic_averager:
                               max_counter :  int = 3, res_chunks: int = 15, res_ravg: int = 10,
                               recalculate: bool = False):
         """
-        TODO: docstring
+        Note
+        ----
+        detects precise position of jumps in trajectory yielding time domains.
+        
+        Parameters
+        ----------
+        var: str
+            variable. default is "dih"
+        index: list, array, "all"
+            the index(es) to analyse. use all for np.arange(natoms)
+        thresh_chunk: int/float
+            threshold for displacement above which a jump is detected
+        thresh_frame: int/float
+            increase in ravg above which we consider a jump (if happens max_counter times in a row)
+        max_counter: int
+            how many increases of ravg of more than thresh_frame need to happen to constitute a jump
+            if fewer, it is considered fluctuation
+        res_chunk: int
+            size of the chunks used for the displacement
+        res_ravg: int
+            time interval for the running average. No more than res_chunk
+        recalculate: bool
+            whether the displacement should be recalculated
+            
         """
         if index in ([], np.array([])):
             raise ValueError("You must specify some indexes! (in ic_numbering)")
@@ -1355,9 +1580,31 @@ class Ic_averager:
     
     def time_domains_to_basins(self,  domains: Union[dict, list], var: str = "dih",
                                index: Union[list, np.ndarray, int, str] = [],
-                               thresh: int = 3, check_thresh: int = 10):
+                               thresh: Union[int, float] = 3, check_thresh: Union[int, float] = 10):
         """
-        TODO:docstring
+        Note
+        ----
+        Joins domains with similar centers
+        
+        Parameters
+        ----------
+        domains: dict, list
+            dictionary of idx = domains or list if only one idx
+        var: str
+            variable. default is "dih"
+        index: list, array, "all"
+            the index(es) to analyse. use all for np.arange(natoms)
+        thresh: int/float
+            max distance of centers one to the closest to be put in the same basin
+        check_thresh: int/float
+            threshold for min-max of domain centers within a basin
+            e.g. if centers = [180,181,182,...,195] they are all within 1° of the closest,
+            but if check_thresh < 15 an error will be raised
+        
+        Returns
+        -------
+        tuple(list, list)
+            basins, centers
         """
         if index in ([], np.array([])):
            if type(domains) == dict:
@@ -1462,7 +1709,7 @@ class Ic_averager:
     def copy(self):
         """Copies the Ic_averager        
         """
-        return c.deepcopy(self)
+        return cp.deepcopy(self)
     
     def cart_to_ic(self, arr: Union[int, list, tuple, np.array]):  # test combination with plotting
         """
@@ -1735,7 +1982,6 @@ class Ic_averager:
                       displacement: bool = False, ravg: bool = False,
                       res_displ: int = 15, res_ravg: int = 10, recalculate: bool = False):
         """
-        TODO: update docstring
         Note
         ----
         Plots the time evolution of one or more variable
@@ -1744,6 +1990,8 @@ class Ic_averager:
         ----------
         index: list or int
             index or list of indexes to plot (data[index,:])
+        basins: bool
+            whether the basins should be plotted with different colors
         var: str 
             variable type (dih/angle/bond). also used as label for y axis. default is "dihedral"
         title: str
@@ -1753,6 +2001,19 @@ class Ic_averager:
             Only applies for var=="dih". 
         label: list/str
             label(s) for the series to plot. length must match that of index
+        legend: bool
+            whether the legend should be added
+        displacement: bool
+            whether the displacement should be plotted
+        ravg: bool
+            whether the running average should be plotted
+        res_displ: int
+            the size of the chunks for the displacement
+        res_ravg: int
+            the time interval for the running average
+        recalculate: bool
+            whether running average and/or displacement should be recalculated
+            (use if changing res)
     
         Returns
         -------
@@ -1923,8 +2184,10 @@ class Ic_averager:
             whether the legend should appear or not
         res: int
             resolution if some displacement needs to be calculated
+        recalculate: bool
+            whether running average and/or displacement should be recalculated
+            (use if changing res)
         """
-        # TODO update docstring
         var = vds[var] if var in vds.keys() else var
         if type(index) in [int, np.int32, np.int64]:
             index = [index]
@@ -1982,8 +2245,10 @@ class Ic_averager:
             whether the legend should appear or not
         res: int
             resolution if some displacement needs to be calculated
+        recalculate: bool
+            whether running average and/or displacement should be recalculated
+            (use if changing res)
         """
-        # TODO update docstring
         var = vds[var] if var in vds.keys() else var
         if type(index) in [int, np.int32, np.int64]:
             index = [index]
