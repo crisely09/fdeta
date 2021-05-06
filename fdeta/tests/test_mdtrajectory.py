@@ -8,7 +8,6 @@ from nose.tools import assert_raises
 from fdeta.units import BOHR
 from fdeta.traj_tools import data_from_file
 from fdeta.traj_tools import read_gromacs_trajectory
-from fdeta.mdtrajectory import MDTrajectory
 from fdeta.mdtrajectory import get_charge_dist, get_charge_and_electron_dist
 
 
