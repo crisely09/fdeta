@@ -19,7 +19,7 @@ from fdeta.units import BOHR
 def test_align_basics():
     """Test basic functions for alignment."""
     # Test align from scratch
-    atoms = ['He', 'He']
+    atoms = np.array(['He', 'He'])
     coords = np.array([[0.0, 0.0, 0.0], [0.0, 0.0, 2.5]])
     coords2 = np.array([[1.0, 0.0, 0.0], [1.0, 0.0, 2.5]])
     geos = dict(atoms=[atoms, atoms], coords=[coords, coords2])
@@ -33,7 +33,7 @@ def test_align_basics():
     assert np.allclose(geos['coords'][0], ref_geo['coords'])
     assert np.allclose(geos['coords'][1], ref_geo['coords'])
     # Test align from matrices
-    geos2 = dict(atoms=[atoms, atoms], coords=[coords, coords2])
+    geos2 = dict(atoms=[atoms, atoms], coords=[coords, coords2], frameids=[0, 1])
     assert_raises(TypeError, _align_from_matrices, atoms, mpath)
     assert_raises(ValueError, _align_from_matrices, atoms, None)
     assert_raises(TypeError, _align_from_matrices, geos2, ref_geo)
@@ -49,7 +49,7 @@ def test_align_frames():
     atoms = ['He', 'He']
     coords = np.array([[0.0, 0.0, 0.0], [0.0, 0.0, 2.5]])
     coords2 = np.array([[1.0, 0.0, 0.0], [1.0, 0.0, 2.5]])
-    geos = dict(atoms=[atoms, atoms], coords=[coords, coords2])
+    geos = dict(atoms=[atoms, atoms], coords=[coords, coords2], frameids=[0, 1])
     ref_geo = dict(atoms=atoms, coords=coords)
     assert_raises(ValueError, align_frames, geos)
     align_frames(geos, ref_geo)

@@ -206,10 +206,10 @@ if __name__ == "__main__":
 
     usage = """
 usage:
-calculate_rmsd [--output] <structure_a.xyz> <structure_b.xyz>
+calculate_rmsd [--return_full] <structure_a.xyz> <structure_b.xyz>
 
 Options:
-    --output  Print out the structure a, centered and rotated unto structure
+    --return_full  Print out the structure a, centered and rotated unto structure
               b's coordinates.
 
 Calculate Root-mean-square deviation (RMSD) between two molecules.
@@ -231,11 +231,11 @@ The script will return three RMSD values;
         print(usage)
         sys.exit(0)
 
-    output = False
+    return_full = False
     i = 0
 
-    if args[0] == '--output':
-        output = True
+    if args[0] == '--return_full':
+        return_full = True
         i += 1
 
     mol1 = args[i]
@@ -255,9 +255,9 @@ The script will return three RMSD values;
     P -= Pc
     Q -= Qc
 
-    if output:
+    if return_full:
 
-        V, U, r = kabsch(P, Q, output=True)
+        V, U, r = kabsch(P, Q, return_full=True)
         V += Qc
         write_coordinates(atomsP, V)
 

@@ -4,16 +4,13 @@ Tools for FDET with MD averaged rhoB densities.
 
 """
 import os
-import re
 import sys
 import sysconfig
-import platform
-import subprocess
 
 from distutils.version import LooseVersion
 from setuptools import setup, Extension
-from setuptools.command.build_ext import build_ext
 from setuptools import find_packages
+from setuptools.command.build_ext import build_ext
 import versioneer
 
 
@@ -27,7 +24,7 @@ os.environ['FDETADATA'] = '$FDETAPATH/fdeta/data'
 try:
     with open("README.md", "r") as handle:
         long_description = handle.read()
-except:
+except (FileNotFoundError, IOError):
     long_description = "\n".join(short_description[2:]),
 
 

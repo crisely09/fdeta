@@ -9,12 +9,11 @@ Module for trajectory analysis.
 """
 
 import numpy as np
-from typing import Union
 from fdeta.fragments import Fragment, Ensemble
 from fdeta.kabsch import perform_kabsch
-from fdeta.uelement import get_unique_elements, UElement
-from fdeta.traj_tools import default_charges, find_unique_elements, atom_to_mass
-from fdeta.traj_tools import data_from_file, clean_atom_name, atom_to_charge
+from fdeta.uelement import get_unique_elements
+from fdeta.traj_tools import find_unique_elements
+from fdeta.traj_tools import atom_to_charge
 from fdeta.traj_tools import compute_center_of_mass
 from fdeta.units import BOHR
 

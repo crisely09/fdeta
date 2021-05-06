@@ -233,7 +233,7 @@ def _align_from_scratch(geos_ensemble, ref_frag, save_matrices=False, mat_path=N
         ref_atoms = ref_frag.atoms
         ref_geo = ref_frag.coords
     elif isinstance(ref_frag, dict):
-        ref_atoms = ref_frag['atoms']
+        ref_atoms = np.array(ref_frag['atoms'])
         ref_geo = ref_frag['coords']
         if isinstance(ref_geo, list):
             tmp = np.array(ref_geo)
